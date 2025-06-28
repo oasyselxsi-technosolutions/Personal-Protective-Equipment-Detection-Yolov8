@@ -22,6 +22,9 @@ def video_detection(path_x):
 
     while True:
         success, img = cap.read()
+        if not success:
+            break  # Exit the loop if the video ends or cannot be read
+
         results = model(img, stream=True)
 
         for r in results:
@@ -65,26 +68,28 @@ def video_detection(path_x):
                             'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
                         })
 
+        # Display the video frame with detections
+        cv2.imshow("YOLO Detection", img)
 
-        yield img
+        # Break the loop if 'q' is pressed
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
 
+        # Save detection results every 30 seconds
         if (datetime.now() - start_time).seconds >= 30:
-            # Open the text file for appending detections
             with open('detection_results.txt', 'a') as file:
-                # Write the detection results
                 for detection in detection_results:
-
                     file.write(f"[ {detection['time']} ] {detection['class']} {detection['confidence']} {detection['bounding_box']} \n")
                 file.write('\n')  # Add a newline to separate each 30-second interval
 
-            # Reset the start time and clear the detection results list
             start_time = datetime.now()
             detection_results = []
 
-        yield img
-        #out.write(img)
-        #cv2.imshow("image", img)
-        #if cv2.waitKey(1) & 0xFF==ord('1'):
-            #break
-    #out.release()
-cv2.destroyAllWindows()
+    cap.release()
+    cv2.destroyAllWindows()
+
+
+if __name__ == "__main__":
+    # Replace 'path_to_video.mp4' with the actual path to your video file
+    video_path = "/home/yunusparvej/workpackages/consultancy_ws/Personal_Protective_Equipment_Detection/Personal-Protective-Equipment-Detection-Yolov8/twowomen_withhats_Test3.mp4"
+    video_detection(video_path)

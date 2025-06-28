@@ -49,6 +49,29 @@ def generate_frames_web(path_x):
         yield (b'--frame\r\n'
                     b'Content-Type: image/jpeg\r\n\r\n' + frame +b'\r\n')
 
+# filepath: [flaskapp.py](http://_vscodecontentref_/0)
+
+def generate_frames_ip_camera(ip_camera_url):
+    """Generate frames from the IP camera."""
+    cap = cv2.VideoCapture(ip_camera_url)
+    while True:
+        success, frame = cap.read()
+        if not success:
+            break  # Exit if the camera feed is not accessible
+
+        ref, buffer = cv2.imencode('.jpg', frame)
+        frame = buffer.tobytes()
+        yield (b'--frame\r\n'
+               b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+
+@app.route('/ipcamera')
+def ipcamera():
+    """Route to display IP camera feed."""
+    # Replace with your IP camera URL
+    ip_camera_url = "rtsp://192.168.1.100:554/stream"
+    ip_camera_url = "rtsp://username:password@192.168.1.100:554/stream"
+    return Response(generate_frames_ip_camera(ip_camera_url), mimetype='multipart/x-mixed-replace; boundary=frame')        
+
 @app.route('/', methods=['GET','POST'])
 @app.route('/home', methods=['GET','POST'])
 def home():
