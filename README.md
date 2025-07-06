@@ -44,6 +44,21 @@ cd your-repo
 3. Install the required Python packages using pip:
 ```pip install -r requirements.txt```
 
+4. Set up environment variables:
+```
+copy .env.example .env
+```
+Edit the `.env` file with your camera credentials and configuration:
+```
+CAMERA_IP=your_camera_ip_address
+CAMERA_USERNAME=your_camera_username  
+CAMERA_PASSWORD=your_camera_password
+CAMERA_PORT=554
+FLASK_HOST=127.0.0.1
+FLASK_PORT=5000
+FLASK_DEBUG=True
+```
+
 
 ## 4. Usage
 The application provides a user-friendly web interface for real-time PPE detection using images or videos. To use the application:

@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>IP Camera Debug</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 20px; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .camera-feed { border: 2px solid #ccc; margin: 20px 0; }
+        .status { padding: 10px; margin: 10px 0; border-radius: 5px; }
+        .success { background-color: #d4edda; color: #155724; }
+        .error { background-color: #f8d7da; color: #721c24; }
+        .info { background-color: #d1ecf1; color: #0c5460; }
+        button { padding: 10px 20px; margin: 5px; background-color: #007bff; color: white; border: none; border-radius: 3px; cursor: pointer; }
+        button:hover { background-color: #0056b3; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>IP Camera Debug Page</h1>
+        
+        <div class="status info">
+            <strong>Available Endpoints:</strong>
+            <ul>
+                <li><strong>Standard Endpoints:</strong></li>
+                <li>/ipcamera - IP Camera with YOLO detection</li>
+                <li>/ipcamera_raw - IP Camera without YOLO detection</li>
+                <li>/webapp - Webcam with YOLO detection</li>
+                <li><strong>Stable Endpoints:</strong></li>
+                <li>/ipcamera_stable - Stable IP Camera with YOLO detection</li>
+                <li>/ipcamera_stable_raw - Stable IP Camera without YOLO detection</li>
+                <li>/webapp_stable - Stable Webcam with YOLO detection</li>
+                <li><strong>Adaptive Endpoints (For High-Res Cameras):</strong></li>
+                <li>/ipcamera_adaptive - Adaptive IP Camera with YOLO detection</li>
+                <li>/ipcamera_adaptive_raw - Adaptive IP Camera without YOLO detection</li>
+            </ul>
+            <p><strong>Note:</strong> Use "Adaptive" endpoints if your camera provides high-resolution frames (>1080p).</p>
+        </div>
+        
+        <button onclick="testCamera()">Test Camera Connection</button>
+        
+        <h3>Camera Feeds:</h3>
+        <div style="margin-bottom: 10px;">
+            <strong>Standard Feeds:</strong><br>
+            <button onclick="startStream('ipcamera')">IP Camera (YOLO)</button>
+            <button onclick="startStream('ipcamera_raw')">IP Camera (Raw)</button>
+            <button onclick="startStream('webapp')">Webcam (YOLO)</button>
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Stable Feeds:</strong><br>
+            <button onclick="startStream('ipcamera_stable')" style="background-color: #28a745;">IP Camera Stable (YOLO)</button>
+            <button onclick="startStream('ipcamera_stable_raw')" style="background-color: #28a745;">IP Camera Stable (Raw)</button>
+            <button onclick="startStream('webapp_stable')" style="background-color: #28a745;">Webcam Stable (YOLO)</button>
+        </div>
+        <div style="margin-bottom: 10px;">
+            <strong>Adaptive Feeds (High-Res Cameras):</strong><br>
+            <button onclick="startStream('ipcamera_adaptive')" style="background-color: #17a2b8;">IP Camera Adaptive (YOLO)</button>
+            <button onclick="startStream('ipcamera_adaptive_raw')" style="background-color: #17a2b8;">IP Camera Adaptive (Raw)</button>
+        </div>
+        <button onclick="stopStream()" style="background-color: #dc3545;">Stop Stream</button>
+        
+        <div id="status"></div>
+        
+        <div id="camera-container" style="display: none;">
+            <h3>Camera Feed:</h3>
+            <img id="camera-feed" class="camera-feed" src="" alt="Camera feed will appear here" width="640" height="480">
+        </div>
+    </div>
+
+    <script>
+        function testCamera() {
+            const statusDiv = document.getElementById('status');
+            statusDiv.innerHTML = '<div class="status info">Testing camera connection...</div>';
+            
+            fetch('/test_camera')
+                .then(response => response.json())
+                .then(data => {
+                    if (data.status === 'success') {
+                        statusDiv.innerHTML = `<div class="status success">${data.message}</div>`;
+                    } else {
+                        statusDiv.innerHTML = `<div class="status error">${data.message}</div>`;
+                        if (data.suggestions) {
+                            statusDiv.innerHTML += '<div class="status info"><strong>Suggestions:</strong><ul>' + 
+                                data.suggestions.map(s => `<li>${s}</li>`).join('') + '</ul></div>';
+                        }
+                    }
+                })
+                .catch(error => {
+                    statusDiv.innerHTML = `<div class="status error">Error testing camera: ${error}</div>`;
+                });
+        }
+
+        function startStream(endpoint) {
+            const container = document.getElementById('camera-container');
+            const feed = document.getElementById('camera-feed');
+            
+            container.style.display = 'block';
+            feed.src = '/' + endpoint;
+            feed.onerror = function() {
+                document.getElementById('status').innerHTML = `
+                    <div class="status error">
+                        <h4>Stream Error</h4>
+                        <p>Unable to load ${endpoint} stream. Check the test results above.</p>
+                    </div>
+                `;
+            };
+            
+            document.getElementById('status').innerHTML = `
+                <div class="status info">Loading ${endpoint} stream...</div>
+            `;
+        }
+
+        function stopStream() {
+            const container = document.getElementById('camera-container');
+            const feed = document.getElementById('camera-feed');
+            
+            container.style.display = 'none';
+            feed.src = '';
+            
+            document.getElementById('status').innerHTML = `
+                <div class="status info">Stream stopped</div>
+            `;
+        }
+
+        // Test camera connection on page load
+        window.onload = function() {
+            testCamera();
+        };
+    </script>
+</body>
+</html>

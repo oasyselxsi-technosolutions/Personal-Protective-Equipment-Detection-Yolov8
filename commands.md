@@ -86,3 +86,23 @@ You must use an **App Password** instead of your regular Gmail password.
 **Summary:**  
 Replace your Gmail password with an App Password in your configuration.  
 This is required for all programmatic access to Gmail SMTP.
+
+## Camera Stream Distortion Fix
+
+**Problem**: After ~1 minute of streaming, camera feeds show distorted frames that require refresh to fix.
+
+**Solution**: Use the new stable endpoints that implement:
+- Enhanced buffer management
+- Frame corruption detection  
+- Automatic reconnection
+- Memory leak prevention
+
+### Stable Endpoints (Recommended):
+- `/ipcamera_stable` - Stable IP Camera with YOLO detection
+- `/ipcamera_stable_raw` - Stable IP Camera without YOLO detection
+- `/webapp_stable` - Stable Webcam with YOLO detection
+
+### Debug Interface:
+- `/camera_debug` - Test and switch between different camera sources
+
+For detailed information, see [CAMERA_DISTORTION_FIX.md](CAMERA_DISTORTION_FIX.md)
