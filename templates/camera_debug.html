@@ -61,7 +61,7 @@
         <div id="status"></div>
         
         <div id="camera-container" style="display: none;">
-            <h3>Camera Feed:</h3>
+            <h3 id="feed-title">Camera Feed:</h3>
             <img id="camera-feed" class="camera-feed" src="" alt="Camera feed will appear here" width="640" height="480">
         </div>
     </div>
@@ -92,6 +92,22 @@
         function startStream(endpoint) {
             const container = document.getElementById('camera-container');
             const feed = document.getElementById('camera-feed');
+            const feedTitle = document.getElementById('feed-title');
+            
+            // Define feed names
+            const feedNames = {
+                'ipcamera': 'Standard Feed: IP Camera (YOLO)',
+                'ipcamera_raw': 'Standard Feed: IP Camera (Raw)',
+                'webapp': 'Standard Feed: Webcam (YOLO)',
+                'ipcamera_stable': 'Stable Feed: IP Camera Stable (YOLO)',
+                'ipcamera_stable_raw': 'Stable Feed: IP Camera Stable (Raw)',
+                'webapp_stable': 'Stable Feed: Webcam Stable (YOLO)',
+                'ipcamera_adaptive': 'Adaptive Feed: IP Camera Adaptive (YOLO)',
+                'ipcamera_adaptive_raw': 'Adaptive Feed: IP Camera Adaptive (Raw)'
+            };
+            
+            // Update the feed title
+            feedTitle.textContent = feedNames[endpoint] || `Camera Feed: ${endpoint}`;
             
             container.style.display = 'block';
             feed.src = '/' + endpoint;
@@ -105,16 +121,18 @@
             };
             
             document.getElementById('status').innerHTML = `
-                <div class="status info">Loading ${endpoint} stream...</div>
+                <div class="status info">Loading ${feedNames[endpoint] || endpoint} stream...</div>
             `;
         }
 
         function stopStream() {
             const container = document.getElementById('camera-container');
             const feed = document.getElementById('camera-feed');
+            const feedTitle = document.getElementById('feed-title');
             
             container.style.display = 'none';
             feed.src = '';
+            feedTitle.textContent = 'Camera Feed:';
             
             document.getElementById('status').innerHTML = `
                 <div class="status info">Stream stopped</div>

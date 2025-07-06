@@ -1162,15 +1162,19 @@ if __name__ == "__main__":
     print(f"  - IP Camera Adaptive (YOLO): http://{host}:{port}/ipcamera_adaptive")
     print(f"  - Webcam (YOLO): http://{host}:{port}/webapp")
     
-    app.run(debug=True, port=port, host=host)
+    # Use debug setting from environment variable
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    print(f"Debug mode: {debug_mode}")
+    
+    app.run(debug=debug_mode, port=port, host=host)
 
     # Alternative: Directly specify port in code (uncomment one of these):
     
     # For port 8080 (local access only):
-    # app.run(debug=True, port=8080, host='127.0.0.1')
+    # app.run(debug=False, port=8080, host='127.0.0.1')
     
     # For port 8080 (accessible from other devices on network):
-    # app.run(debug=True, port=8080, host='0.0.0.0')
+    # app.run(debug=False, port=8080, host='0.0.0.0')
     
     # For port 3000 with custom host:
-    # app.run(debug=True, port=3000, host='192.168.1.100')
+    # app.run(debug=False, port=3000, host='192.168.1.100')

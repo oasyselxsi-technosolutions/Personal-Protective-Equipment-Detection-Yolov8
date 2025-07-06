@@ -138,6 +138,111 @@ Here is a visualization of the detection results on sample images:
 ## 10. Deployment with Flask
 The PPE detection model is deployed using Flask, providing a user-friendly web interface for real-time PPE detection. Flask enables seamless integration with the model, allowing users to upload images or provide links to videos and receive instant detection results through the web app.
 
+### Development Mode (Local Testing)
+```bash
+python flaskapp.py
+```
+Access at: `http://localhost:5000`
+
+### Production Mode (Local Network Access)
+
+#### Option 1: Basic Production Mode
+```cmd
+# Windows
+run_flask_production.bat
+
+# Or manually set environment and run
+set FLASK_DEBUG=False
+set FLASK_ENV=production
+python flaskapp.py
+```
+
+#### Option 2: Waitress Production Server (Recommended for Windows)
+```cmd
+# Install production dependencies
+pip install waitress gunicorn
+
+# Start with Waitress (production-grade WSGI server)
+waitress-serve --host=0.0.0.0 --port=5000 --threads=8 wsgi:app
+```
+
+#### Option 3: Automated Production Setup
+```cmd
+# Windows - Automated setup and run
+run_production_waitress.bat
+```
+
+### Network Access Configuration
+
+#### Local Network Access
+- **Development**: `http://127.0.0.1:5000` (local machine only)
+- **Production**: `http://192.168.8.219:5000` (accessible from all devices on local network)
+
+#### Available Endpoints
+Once running, the application provides these endpoints:
+- **Main Application**: `http://192.168.8.219:5000`
+- **Camera Debug Interface**: `http://192.168.8.219:5000/camera_debug`
+- **IP Camera (YOLO Detection)**: `http://192.168.8.219:5000/ipcamera`
+- **IP Camera (Raw Stream)**: `http://192.168.8.219:5000/ipcamera_raw`
+- **Stable Endpoints**: `http://192.168.8.219:5000/ipcamera_stable`
+- **Adaptive Endpoints**: `http://192.168.8.219:5000/ipcamera_adaptive`
+- **Webcam Stream**: `http://192.168.8.219:5000/webapp`
+
+#### Environment Configuration for Production
+Update your `.env` file for production deployment:
+```properties
+# Camera Configuration
+CAMERA_IP=192.168.8.210
+CAMERA_USERNAME=admin
+CAMERA_PASSWORD=your_camera_password
+CAMERA_PORT=554
+
+# Camera Settings
+CAMERA_WIDTH=640
+CAMERA_HEIGHT=480
+CAMERA_BUFFER_SIZE=1
+
+# Flask Configuration (Production)
+FLASK_SECRET_KEY=your-very-secure-secret-key-change-this
+FLASK_PORT=5000
+FLASK_HOST=0.0.0.0
+FLASK_DEBUG=False
+```
+
+#### Windows Firewall Configuration
+To allow network access, add a firewall rule (run as Administrator):
+```cmd
+netsh advfirewall firewall add rule name="Python Flask App" dir=in action=allow protocol=TCP localport=5000
+```
+
+#### Testing Network Access
+1. **Test camera connection**: Visit `http://192.168.8.219:5000/camera_debug`
+2. **Mobile device access**: Connect phone/tablet to same WiFi, open browser to the above URL
+3. **Other computers**: Any device on the same network (192.168.8.x) can access the application
+
+#### Camera Endpoint Types
+- **Standard**: Basic camera streaming with YOLO detection
+- **Stable**: Enhanced stability with buffer management for unreliable connections
+- **Adaptive**: Optimized for high-resolution cameras with dynamic frame processing
+- **Raw**: Direct camera stream without YOLO processing (faster performance)
+
+### Production vs Development Mode
+
+| Feature | Development Mode | Production Mode |
+|---------|------------------|-----------------|
+| **Debug** | ✅ Enabled | ❌ Disabled |
+| **Auto-reload** | ✅ Yes | ❌ No |
+| **Error Details** | ✅ Full Stack | ❌ Generic |
+| **Performance** | ⚠️ Slower | ✅ Optimized |
+| **Network Access** | ⚠️ Local Only | ✅ Local Network |
+| **Security** | ⚠️ Lower | ✅ Higher |
+
+### Additional Documentation
+- `PRODUCTION_DEPLOYMENT.md` - Complete production deployment guide
+- `NETWORK_SETUP.md` - Network configuration and troubleshooting
+- `EXTERNAL_ACCESS_GUIDE.md` - Making the app available over the internet
+- `ENVIRONMENT_SETUP.md` - Detailed environment variable configuration
+
 ## 11. Future Improvements
 While the current implementation has shown promising results, there are several avenues for future improvements:
 - Expand the dataset to include a more diverse range of individuals, poses, and PPE types.
