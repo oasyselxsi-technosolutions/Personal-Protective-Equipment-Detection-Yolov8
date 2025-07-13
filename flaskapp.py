@@ -22,6 +22,11 @@ from YOLO_Video import detect_manufacturing_ppe
 from ultralytics import YOLO
 from config import violation_recording_enabled
 import config
+# Add near your other imports
+from collections import defaultdict
+import re
+from datetime import datetime
+
 
 config.violation_recording_enabled = False
 
@@ -1881,8 +1886,130 @@ def stop_violation_recording():
     print("[DEBUG] Violation recording DISABLED")
     return jsonify({"status": "recording stopped"})
 
-import re
-from datetime import datetime
+
+
+@app.route('/api/violations/count')
+def api_violations_count():
+    """
+    Returns a count of violations per domain for a given date.
+    Example: /api/violations/count?date=2025-07-12
+    """
+    date_str = request.args.get('date')
+    base_dir = "static/violations"
+    counts = defaultdict(int)
+
+    # Regex for: violation_<domain>_<YYYYMMDD>_<HHMMSS>_<microseconds>.jpg
+    pattern = re.compile(r"violation_(?P<domain>.+?)_(?P<date>\d{8})_(?P<time>\d{6})_\d+\.jpg")
+
+    for domain in os.listdir(base_dir):
+        domain_dir = os.path.join(base_dir, domain)
+        if not os.path.isdir(domain_dir):
+            continue
+        for fname in os.listdir(domain_dir):
+            match = pattern.match(fname)
+            if not match:
+                continue
+            file_date_str = match.group("date")  # e.g. 20250712
+            file_date = datetime.strptime(file_date_str, "%Y%m%d").strftime("%Y-%m-%d")
+            if date_str and file_date != date_str:
+                continue
+            file_domain = match.group("domain")
+            counts[file_domain] += 1
+
+    # Return as a list of {domain, count}
+    result = [{"domain": domain, "count": count} for domain, count in counts.items()]
+    return jsonify(result)
+
+@app.route('/api/violations/timeline')
+def api_violations_timeline():
+    """
+    Returns a timeline (violations per day) for a given date range.
+    Example: /api/violations/timeline?from=2025-07-01&to=2025-07-10
+    """
+    from_date = request.args.get('from')
+    to_date = request.args.get('to')
+    if not from_date or not to_date:
+        return jsonify([])  # or return an error message
+    try:
+        from_dt = datetime.strptime(from_date, "%Y-%m-%d")
+        to_dt = datetime.strptime(to_date, "%Y-%m-%d")
+    except Exception as e:
+        return jsonify([])  # or return an error message
+    if from_dt > to_dt:
+        return jsonify([])  # or return an error message
+    
+    base_dir = "static/violations"
+    timeline = {}
+
+    # Regex for: violation_<domain>_<YYYYMMDD>_<HHMMSS>_<microseconds>.jpg
+    pattern = re.compile(r"violation_(?P<domain>.+?)_(?P<date>\d{8})_(?P<time>\d{6})_\d+\.jpg")
+
+    # Parse date range
+    from_dt = datetime.strptime(from_date, "%Y-%m-%d") if from_date else None
+    to_dt = datetime.strptime(to_date, "%Y-%m-%d") if to_date else None
+
+    for domain in os.listdir(base_dir):
+        domain_dir = os.path.join(base_dir, domain)
+        if not os.path.isdir(domain_dir):
+            continue
+        for fname in os.listdir(domain_dir):
+            match = pattern.match(fname)
+            if not match:
+                continue
+            file_date_str = match.group("date")  # e.g. 20250712
+            file_dt = datetime.strptime(file_date_str, "%Y%m%d")
+            file_date = file_dt.strftime("%Y-%m-%d")
+
+            # Filter by date range
+            if from_dt and file_dt < from_dt:
+                continue
+            if to_dt and file_dt > to_dt:
+                continue
+
+            timeline[file_date] = timeline.get(file_date, 0) + 1
+
+    # Return sorted list of {date, count}
+    result = [{"date": date, "count": timeline[date]} for date in sorted(timeline.keys())]
+    return jsonify(result)
+
+@app.route('/api/violations/recent')
+def api_violations_recent():
+    """
+    Returns the most recent violation files, limited by the 'limit' query parameter.
+    Example: /api/violations/recent?limit=10
+    """
+    try:
+        limit = int(request.args.get('limit', 10))
+    except Exception:
+        limit = 10
+
+    base_dir = "static/violations"
+    results = []
+
+    # Regex for: violation_<domain>_<YYYYMMDD>_<HHMMSS>_<microseconds>.jpg
+    pattern = re.compile(r"violation_(?P<domain>.+?)_(?P<date>\d{8})_(?P<time>\d{6})_\d+\.jpg")
+
+    for domain in os.listdir(base_dir):
+        domain_dir = os.path.join(base_dir, domain)
+        if not os.path.isdir(domain_dir):
+            continue
+        for fname in os.listdir(domain_dir):
+            match = pattern.match(fname)
+            if not match:
+                continue
+            file_domain = match.group("domain")
+            file_date_str = match.group("date")
+            file_time_str = match.group("time")
+            file_dt = datetime.strptime(file_date_str + file_time_str, "%Y%m%d%H%M%S")
+            results.append({
+                "filename": f"{domain}/{fname}",
+                "domain": file_domain,
+                "timestamp": file_dt.strftime("%Y-%m-%d %H:%M:%S")
+            })
+
+    # Sort by timestamp descending (most recent first)
+    results.sort(key=lambda x: x["timestamp"], reverse=True)
+    return jsonify(results[:limit])
 
 @app.route('/api/violations')
 def api_violations():
@@ -1934,6 +2061,9 @@ def api_violations():
 
     results.sort(key=lambda x: x["timestamp"], reverse=True)
     return jsonify(results)
+
+
+
 
 if __name__ == "__main__":
     # You can specify port and host here

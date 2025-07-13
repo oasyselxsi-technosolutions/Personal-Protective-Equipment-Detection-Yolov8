@@ -12,12 +12,6 @@ const CAMERA_OPTIONS = [
   { label: "Webcam (Oil & Gas PPE)", value: `http://${host}:${port}/api/webcam_oilgas` }
 ];
 
-const VIOLATION_TYPES = [
-  { label: "NO-Hardhat", value: "NO-Hardhat" },
-  { label: "NO-Mask", value: "NO-Mask" },
-  { label: "NO-Safety Vest", value: "NO-Safety Vest" }
-];
-
 // Helper to format time as "08:00 AM"
 function formatTime(t: string) {
   if (!t) return "--:--";
@@ -50,13 +44,12 @@ const CameraFeed: React.FC = () => {
   const [recording, setRecording] = useState(false);
   const [date, setDate] = useState('');
   const [timeRange, setTimeRange] = useState({ from: '08:00', to: '09:00' });
-  const [violationType, setViolationType] = useState('');
   const [violationFiles, setViolationFiles] = useState<any[]>([]);
   const [selectedViolationFile, setSelectedViolationFile] = useState<any>(null);
 
-  // Fetch violation files when filters change
+  // Fetch violation files when filters change (without violation type)
   useEffect(() => {
-    if (!date || !timeRange.from || !timeRange.to || !violationType) {
+    if (!date || !timeRange.from || !timeRange.to) {
       setViolationFiles([]);
       setSelectedViolationFile(null);
       return;
@@ -64,8 +57,7 @@ const CameraFeed: React.FC = () => {
     const params = new URLSearchParams({
       date,
       from: timeRange.from,
-      to: timeRange.to,
-      type: violationType
+      to: timeRange.to
     });
     fetch(`http://${host}:${port}/api/violations?${params.toString()}`)
       .then(res => res.json())
@@ -77,7 +69,7 @@ const CameraFeed: React.FC = () => {
         setViolationFiles([]);
         setSelectedViolationFile(null);
       });
-  }, [date, timeRange, violationType]);
+  }, [date, timeRange]);
 
   const handleRadioChange = async (value: string) => {
     setShowFeed(false);
@@ -169,16 +161,6 @@ const CameraFeed: React.FC = () => {
             >
               {timeOptions.map(t => (
                 <option key={t} value={t}>{formatTime(t)}</option>
-              ))}
-            </select>
-            <select
-              value={violationType}
-              onChange={e => setViolationType(e.target.value)}
-              style={{ marginRight: "1em" }}
-            >
-              <option value="">Select violation</option>
-              {VIOLATION_TYPES.map(v => (
-                <option key={v.value} value={v.value}>{v.label}</option>
               ))}
             </select>
             <span style={{ fontWeight: 500, color: "#555", marginRight: "1em" }}>

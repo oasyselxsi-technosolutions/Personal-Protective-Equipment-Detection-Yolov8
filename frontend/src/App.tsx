@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import * as FaIcons from 'react-icons/fa';
 import Dashboard from './components/Dashboard';
 import CameraFeed from './components/CameraFeed';
+import Reports from './components/Reports';
 
 type MenuItem = {
   label: string;
@@ -31,7 +32,7 @@ const App: React.FC = () => {
       case 'Camera Feed':
         return <CameraFeed />;
       case 'Reports':
-        return <div>Reports content goes here</div>;
+        return <Reports />;
       default:
         return null;
     }
