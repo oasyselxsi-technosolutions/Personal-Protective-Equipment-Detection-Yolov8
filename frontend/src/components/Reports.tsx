@@ -7,6 +7,8 @@ function getToday() {
   return d.toISOString().slice(0, 10);
 }
 
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL;
+
 const Reports: React.FC = () => {
   const [tab, setTab] = useState<'domain' | 'timeline' | 'recent' | 'type'>('domain');
   const [date, setDate] = useState('');
@@ -30,7 +32,7 @@ const Reports: React.FC = () => {
   // Fetch domain counts
   useEffect(() => {
     if (tab === 'domain' && date) {
-      axios.get(`http://localhost:5000/api/violations/count?date=${date}`)
+      axios.get(`${API_BASE_URL}/violations/count?date=${date}`)
         .then(res => {
           setCounts(res.data);
           setError(null);
@@ -42,7 +44,7 @@ const Reports: React.FC = () => {
   // Fetch timeline data
   useEffect(() => {
     if (tab === 'timeline' && timelineFrom && timelineTo && timelineFrom <= timelineTo) {
-      axios.get(`http://localhost:5000/api/violations/timeline?from=${timelineFrom}&to=${timelineTo}`)
+      axios.get(`${API_BASE_URL}/violations/timeline?from=${timelineFrom}&to=${timelineTo}`)
         .then(res => {
           setTimeline(res.data);
           setError(null);
@@ -54,7 +56,7 @@ const Reports: React.FC = () => {
   // Fetch recent violations
   useEffect(() => {
     if (tab === 'recent') {
-      axios.get(`http://localhost:5000/api/violations/recent?limit=${recentLimit}`)
+      axios.get(`${API_BASE_URL}/violations/recent?limit=${recentLimit}`)
         .then(res => {
           setRecent(res.data);
           setError(null);
@@ -66,7 +68,7 @@ const Reports: React.FC = () => {
   // Fetch by type
   useEffect(() => {
     if (tab === 'type' && date) {
-      axios.get(`http://localhost:5000/api/violations/by_type?date=${date}`)
+      axios.get(`${API_BASE_URL}/violations/by_type?date=${date}`)
         .then(res => {
           setTypeCounts(res.data);
           setError(null);

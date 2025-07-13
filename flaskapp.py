@@ -47,7 +47,8 @@ FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
 # Global variable to hold the webcam capture object
 webcam_cap = None
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/api/*": {"origins": "*"}})
+# CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
 # Add at the top
 violation_recording_enabled = False
 

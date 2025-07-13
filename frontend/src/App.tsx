@@ -51,7 +51,7 @@ const App: React.FC = () => {
         padding: '2rem 0 2rem 1rem'
       }}>
         <div style={{ marginBottom: '2rem', fontWeight: 'bold', fontSize: 18, color: '#888' }}>
-          {/* Logo or App Name */}
+          Industrial Safety AI
         </div>
         {MENU.map(item => (
           <button
@@ -80,8 +80,18 @@ const App: React.FC = () => {
           </button>
         ))}
         <div style={{ flexGrow: 1 }} />
-        <div style={{ fontSize: 12, color: '#bbb', marginLeft: 8, marginTop: 16 }}>
-          Powered by <b>Oasys Elxsi Techno Soluions</b>
+          <div style={{ fontSize: 12, color: '#bbb', marginLeft: 8, marginTop: 16 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
+            <span>Powered by</span>
+            <img
+              src="/oasys-logo.png"
+              alt="Oasys Elxsi Techno Solutions"
+              style={{ height: 46, marginLeft: 8 }}
+            />
+          </div>
+          <div style={{ marginTop: 4, fontWeight: 'bold', color: '#888', textAlign: 'left' }}>
+            Oasys Elxsi Techno Solutions
+          </div>
         </div>
       </div>
       {/* Main Content */}

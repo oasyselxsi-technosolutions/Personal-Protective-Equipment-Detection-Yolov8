@@ -1,15 +1,21 @@
 import React, { useState, useEffect } from 'react';
 
-const host = "localhost";
-const port = 5000;
+// Use environment variable for API base URL
+const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000/api";
+
+// Helper to get the static base (for images)
+function getStaticBaseUrl() {
+  // Remove trailing /api if present
+  return API_BASE_URL.replace(/\/api\/?$/, "");
+}
 
 const CAMERA_OPTIONS = [
-  { label: "Webcam (Raw)", value: `http://${host}:${port}/api/webcam_raw` },
-  { label: "Webcam (YOLO)", value: `http://${host}:${port}/api/webcam_yolo` },
-  { label: "Webcam (Manufacturing PPE)", value: `http://${host}:${port}/api/webcam_manufacturing` },
-  { label: "Webcam (Construction PPE)", value: `http://${host}:${port}/api/webcam_construction` },
-  { label: "Webcam (Healthcare PPE)", value: `http://${host}:${port}/api/webcam_healthcare` },
-  { label: "Webcam (Oil & Gas PPE)", value: `http://${host}:${port}/api/webcam_oilgas` }
+  { label: "Webcam (Raw)", value: `${API_BASE_URL}/webcam_raw` },
+  { label: "Webcam (YOLO)", value: `${API_BASE_URL}/webcam_yolo` },
+  { label: "Webcam (Manufacturing PPE)", value: `${API_BASE_URL}/webcam_manufacturing` },
+  { label: "Webcam (Construction PPE)", value: `${API_BASE_URL}/webcam_construction` },
+  { label: "Webcam (Healthcare PPE)", value: `${API_BASE_URL}/webcam_healthcare` },
+  { label: "Webcam (Oil & Gas PPE)", value: `${API_BASE_URL}/webcam_oilgas` }
 ];
 
 // Helper to format time as "08:00 AM"
@@ -37,15 +43,27 @@ function generateTimeOptions(stepMinutes = 30) {
 
 const timeOptions = generateTimeOptions(30); // every 30 minutes
 
+// Helper to get today's date in YYYY-MM-DD format
+function getToday() {
+  const d = new Date();
+  return d.toISOString().slice(0, 10);
+}
+
 const CameraFeed: React.FC = () => {
   const [selectedFeed, setSelectedFeed] = useState(CAMERA_OPTIONS[0].value);
   const [imgKey, setImgKey] = useState(Date.now());
   const [showFeed, setShowFeed] = useState(true);
   const [recording, setRecording] = useState(false);
   const [date, setDate] = useState('');
-  const [timeRange, setTimeRange] = useState({ from: '08:00', to: '09:00' });
+  const [timeRange, setTimeRange] = useState({ from: '07:00', to: '08:00' });
   const [violationFiles, setViolationFiles] = useState<any[]>([]);
   const [selectedViolationFile, setSelectedViolationFile] = useState<any>(null);
+
+  // Set today's date and default time range on mount
+  useEffect(() => {
+    setDate(getToday());
+    setTimeRange({ from: '07:00', to: '08:00' });
+  }, []);
 
   // Fetch violation files when filters change (without violation type)
   useEffect(() => {
@@ -59,7 +77,7 @@ const CameraFeed: React.FC = () => {
       from: timeRange.from,
       to: timeRange.to
     });
-    fetch(`http://${host}:${port}/api/violations?${params.toString()}`)
+    fetch(`${API_BASE_URL}/violations?${params.toString()}`)
       .then(res => res.json())
       .then(data => {
         setViolationFiles(data || []);
@@ -74,7 +92,7 @@ const CameraFeed: React.FC = () => {
   const handleRadioChange = async (value: string) => {
     setShowFeed(false);
     try {
-      await fetch(`http://${host}:${port}/api/release_webcam`, { method: 'POST' });
+      await fetch(`${API_BASE_URL}/release_webcam`, { method: 'POST' });
     } catch {}
     setTimeout(() => {
       setSelectedFeed(value);
@@ -85,8 +103,8 @@ const CameraFeed: React.FC = () => {
 
   const handleRecordingToggle = async () => {
     const endpoint = recording
-      ? `http://${host}:${port}/api/stop_violation_recording`
-      : `http://${host}:${port}/api/start_violation_recording`;
+      ? `${API_BASE_URL}/stop_violation_recording`
+      : `${API_BASE_URL}/start_violation_recording`;
     try {
       await fetch(endpoint, { method: 'POST' });
       setRecording(!recording);
@@ -255,7 +273,7 @@ const CameraFeed: React.FC = () => {
         <div>
           {selectedViolationFile && (
             <img
-              src={`http://${host}:${port}/static/violations/${selectedViolationFile.filename}`}
+              src={`${getStaticBaseUrl()}/static/violations/${selectedViolationFile.filename}`}
               alt="Violation"
               style={{
                 maxWidth: 320,
