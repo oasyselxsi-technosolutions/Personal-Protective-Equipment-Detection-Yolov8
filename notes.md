@@ -1,24 +1,29 @@
 # Clean build
+
 npm run clean
 npm run build
 npm start
 
 ---
+
 4. npm Clean (Optional)
-If you suspect a corrupted node_modules or build cache:
+   If you suspect a corrupted node_modules or build cache:
 
 rm -rf node_modules
 npm install
 npm run build
 
 ---
+
 ## To display the API routes in flask application
 
 `flask routes`
 
 flask routes
 Endpoint                   Methods    Rule
+
 -------------------------  ---------  ------------------------------
+
 api_violations             GET        /api/violations
 camera_debug               GET        /camera_debug
 dashboard                  GET        /api/dashboard
@@ -48,9 +53,10 @@ webcam_oilgas              GET        /api/webcam_oilgas
 webcam_raw                 GET        /api/webcam_raw
 webcam_yolo                GET        /api/webcam_yolo
 
-
 ---
-## Segmentation fault error 
+
+## Segmentation fault error
+
 webcam (raw) connection successful, starting frame generation...
 0: 608x800 1 NO-Hardhat, 1 NO-Safety Vest, 1 Person, 26.6ms
 Speed: 0.7ms preprocess, 26.6ms inference, 1.9ms postprocess per image at shape (1, 3, 800, 800)

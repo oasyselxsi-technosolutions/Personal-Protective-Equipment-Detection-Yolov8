@@ -1212,6 +1212,10 @@ def generate_frames_webcam_raw():
         frame_count = 0
 
         while True:
+
+            if webcam_cap is None:
+                print("generate_frames_webcam_raw - Webcam has been released, stopping frame generation.")
+                break
             success, frame = webcam_cap.read()
             if not success:
                 print("Failed to read frame from webcam (raw)")
@@ -1283,6 +1287,10 @@ def api_generate_frames_webcam_yolo():
         frame_skip_counter = 0
 
         while True:
+            if webcam_cap is None:
+                print("api_generate_frames_webcam_yolo - Webcam has been released, stopping frame generation.")
+                break
+
             webcam_cap.grab()
             success, frame = webcam_cap.retrieve()
 
@@ -1394,6 +1402,10 @@ def api_generate_frames_webcam_manufacturing():
         model = YOLO("YOLO-Weights/bestest.pt")
 
         while True:
+            if webcam_cap is None:
+                print("api_generate_frames_webcam_manufacturing- Webcam has been released, stopping frame generation.")
+                break
+
             webcam_cap.grab()
             success, frame = webcam_cap.retrieve()
 
@@ -1505,6 +1517,11 @@ def api_generate_frames_webcam_construction():
         model = YOLO("YOLO-Weights/bestest.pt")
 
         while True:
+
+            if webcam_cap is None:
+                print("api_generate_frames_webcam_construction- Webcam has been released, stopping frame generation.")
+                break   
+
             webcam_cap.grab()
             success, frame = webcam_cap.retrieve()
 
@@ -1590,7 +1607,45 @@ def release_webcam():
     except Exception as e:
         print(f"[DEBUG] Error releasing webcam: {str(e)}")
         return jsonify({"status": "error", "message": str(e)}), 500
-    
+
+@app.route('/api/release_feed', methods=['POST'])
+def release_feed():
+    """
+    Release the current feed resource (webcam or ipcamera).
+    Expects JSON: { "feed_type": "webcam" | "ipcamera" }
+    """
+    global webcam_cap
+    data = request.get_json() or {}
+    feed_type = data.get("feed_type", "webcam")
+
+    if feed_type == "webcam":
+       
+        try:
+            if webcam_cap is not None:
+                webcam_cap.release()
+                webcam_cap = None
+                print("[DEBUG] Webcam released by generic API call")
+                return jsonify({"status": "released"}), 200
+            else:
+                print("[DEBUG] No webcam to release")
+                return jsonify({"status": "no webcam to release"}), 200
+        except Exception as e:
+            print(f"[DEBUG] Error releasing webcam: {str(e)}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+
+    elif feed_type == "ipcamera":
+        # If you have a global IP camera capture object, release it here
+        # Example:
+        # global ipcamera_cap
+        # if ipcamera_cap is not None:
+        #     ipcamera_cap.release()
+        #     ipcamera_cap = None
+        #     print("[DEBUG] IP camera released by generic API call")
+        #     return jsonify({"status": "ipcamera released"}), 200
+        return jsonify({"status": "ipcamera release not implemented"}), 200
+    else:
+        return jsonify({"status": "unknown feed type"}), 400
+        
 @app.route('/api/webcam_raw')
 def webcam_raw():
     """Route to display webcam feed without YOLO detection."""
@@ -1676,6 +1731,11 @@ def api_generate_frames_webcam_healthcare():
         model = YOLO("YOLO-Weights/bestest.pt")
 
         while True:
+
+            if webcam_cap is None:
+                print("api_generate_frames_webcam_healthcare- Webcam has been released, stopping frame generation.")
+                break   
+
             webcam_cap.grab()
             success, frame = webcam_cap.retrieve()
 
@@ -1796,6 +1856,11 @@ def api_generate_frames_webcam_oilgas():
         model = YOLO("YOLO-Weights/bestest.pt")
 
         while True:
+
+            if webcam_cap is None:
+                print("api_generate_frames_webcam_oilgas - Webcam has been released, stopping frame generation.")
+                break  
+
             webcam_cap.grab()
             success, frame = webcam_cap.retrieve()
 

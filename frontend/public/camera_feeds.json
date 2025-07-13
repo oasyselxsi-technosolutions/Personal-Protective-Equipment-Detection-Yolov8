@@ -1,0 +1,30 @@
+[
+  {
+    "id": "gate1",
+    "name": "Webcam at- RAW",
+    "location": "Site Gate",
+    "type": "webcam",
+    "url": "http://localhost:5000/api/webcam_raw"
+  },
+  {
+    "id": "gate2",
+    "name": "Gate #2",
+    "location": "Room",
+    "type": "ipcamera",
+    "url": "http://localhost:5000/api/webcam_yolo"
+  },
+   {
+    "id": "webcam_yolo_manufacturing",
+    "name": "Webcam Manufacturing",
+    "location": "Manufacturing Floor",
+    "type": "webcam",
+    "url": "http://localhost:5000/api/webcam_manufacturing"
+  },
+  {
+    "id": "webcam_yolo_construction",
+    "name": "Webcam Construction",
+    "location": "Construction Floor",
+    "type": "webcam",
+    "url": "http://localhost:5000/api/webcam_construction"
+  }
+]

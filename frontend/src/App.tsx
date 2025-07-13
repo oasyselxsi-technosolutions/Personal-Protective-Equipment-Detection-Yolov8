@@ -3,22 +3,24 @@ import * as FaIcons from 'react-icons/fa';
 import Dashboard from './components/Dashboard';
 import CameraFeed from './components/CameraFeed';
 import Reports from './components/Reports';
+import WebCamFeed from './components/WebCamFeed';
 
 type MenuItem = {
   label: string;
-  icon: 'dashboard' | 'camera' | 'reports';
+  icon: 'dashboard' | 'camera' | 'webcam' | 'reports';
 };
 
 const MENU: MenuItem[] = [
   { label: 'Dashboard', icon: 'dashboard' },
   { label: 'Camera Feed', icon: 'camera' },
+  { label: 'WebCam Feed', icon: 'webcam' }, // New menu item
   { label: 'Reports', icon: 'reports' },
 ];
 
-// Use require or dynamic access to avoid JSX type errors
 const ICON_MAP: Record<MenuItem['icon'], React.ReactElement> = {
   dashboard: React.createElement((FaIcons.FaTachometerAlt as any).default || FaIcons.FaTachometerAlt, { size: 20 }),
   camera: React.createElement((FaIcons.FaVideo as any).default || FaIcons.FaVideo, { size: 20 }),
+  webcam: React.createElement((FaIcons.FaCamera as any).default || FaIcons.FaCamera, { size: 20 }), // Icon for webcam
   reports: React.createElement((FaIcons.FaFileAlt as any).default || FaIcons.FaFileAlt, { size: 20 }),
 };
 
@@ -31,6 +33,8 @@ const App: React.FC = () => {
         return <Dashboard />;
       case 'Camera Feed':
         return <CameraFeed />;
+      case 'WebCam Feed':
+        return <WebCamFeed />;
       case 'Reports':
         return <Reports />;
       default:
@@ -80,7 +84,7 @@ const App: React.FC = () => {
           </button>
         ))}
         <div style={{ flexGrow: 1 }} />
-          <div style={{ fontSize: 12, color: '#bbb', marginLeft: 8, marginTop: 16 }}>
+        <div style={{ fontSize: 12, color: '#bbb', marginLeft: 8, marginTop: 16 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-start' }}>
             <span>Powered by</span>
             <img
