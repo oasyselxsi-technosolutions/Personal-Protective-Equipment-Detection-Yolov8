@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Healthcare Feed Direct Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        .feed-container {
+            margin: 20px 0;
+            padding: 20px;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+        .feed-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        .feed-url {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 15px;
+            word-break: break-all;
+        }
+        img {
+            max-width: 100%;
+            border: 1px solid #ccc;
+            border-radius: 4px;
+        }
+        .status {
+            margin-top: 10px;
+            padding: 10px;
+            border-radius: 4px;
+        }
+        .success {
+            background-color: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .error {
+            background-color: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .loading {
+            background-color: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+        }
+        .test-info {
+            background-color: #e2e3e5;
+            padding: 15px;
+            border-radius: 5px;
+            margin-bottom: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🏥 Healthcare Feed Direct Test</h1>
+        
+        <div class="test-info">
+            <strong>Purpose:</strong> This page tests if the healthcare feed can be displayed directly in the browser without React.
+            <br><br>
+            <strong>Instructions:</strong>
+            <ol>
+                <li>Make sure your Flask app is running on port 5000</li>
+                <li>Look at the images below - they should show live camera feeds</li>
+                <li>Check the browser console (F12) for any error messages</li>
+                <li>Compare the working feeds with the healthcare feed</li>
+            </ol>
+        </div>
+
+        <!-- General Feed (should work) -->
+        <div class="feed-container">
+            <div class="feed-title">✅ General Feed (Reference - Should Work)</div>
+            <div class="feed-url">http://localhost:5000/ipcamera_stable/general</div>
+            <img id="general-feed" 
+                 src="http://localhost:5000/ipcamera_stable/general" 
+                 alt="General Feed"
+                 onload="updateStatus('general', 'success', 'Feed loaded successfully')"
+                 onerror="updateStatus('general', 'error', 'Failed to load feed')"
+                 onloadstart="updateStatus('general', 'loading', 'Loading feed...')">
+            <div id="general-status" class="status loading">Loading feed...</div>
+        </div>
+
+        <!-- Healthcare Feed (the problematic one) -->
+        <div class="feed-container">
+            <div class="feed-title">🏥 Healthcare Feed (Testing)</div>
+            <div class="feed-url">http://localhost:5000/ipcamera_stable/healthcare</div>
+            <img id="healthcare-feed" 
+                 src="http://localhost:5000/ipcamera_stable/healthcare" 
+                 alt="Healthcare Feed"
+                 onload="updateStatus('healthcare', 'success', 'Feed loaded successfully')"
+                 onerror="updateStatus('healthcare', 'error', 'Failed to load feed')"
+                 onloadstart="updateStatus('healthcare', 'loading', 'Loading feed...')">
+            <div id="healthcare-status" class="status loading">Loading feed...</div>
+        </div>
+
+        <!-- Raw Healthcare Feed -->
+        <div class="feed-container">
+            <div class="feed-title">🏥 Healthcare Feed (Raw - No YOLO)</div>
+            <div class="feed-url">http://localhost:5000/ipcamera_stable_raw/healthcare</div>
+            <img id="healthcare-raw-feed" 
+                 src="http://localhost:5000/ipcamera_stable_raw/healthcare" 
+                 alt="Healthcare Raw Feed"
+                 onload="updateStatus('healthcare-raw', 'success', 'Feed loaded successfully')"
+                 onerror="updateStatus('healthcare-raw', 'error', 'Failed to load feed')"
+                 onloadstart="updateStatus('healthcare-raw', 'loading', 'Loading feed...')">
+            <div id="healthcare-raw-status" class="status loading">Loading feed...</div>
+        </div>
+
+        <!-- Manufacturing Feed (for comparison) -->
+        <div class="feed-container">
+            <div class="feed-title">🏭 Manufacturing Feed (Comparison)</div>
+            <div class="feed-url">http://localhost:5000/ipcamera_stable/manufacturing</div>
+            <img id="manufacturing-feed" 
+                 src="http://localhost:5000/ipcamera_stable/manufacturing" 
+                 alt="Manufacturing Feed"
+                 onload="updateStatus('manufacturing', 'success', 'Feed loaded successfully')"
+                 onerror="updateStatus('manufacturing', 'error', 'Failed to load feed')"
+                 onloadstart="updateStatus('manufacturing', 'loading', 'Loading feed...')">
+            <div id="manufacturing-status" class="status loading">Loading feed...</div>
+        </div>
+
+        <div class="test-info">
+            <strong>What to look for:</strong>
+            <ul>
+                <li><strong>All feeds working:</strong> The issue is likely in React component</li>
+                <li><strong>Healthcare feed not working:</strong> Backend issue with healthcare domain</li>
+                <li><strong>No feeds working:</strong> Flask app not running or camera not connected</li>
+                <li><strong>Raw healthcare works but YOLO doesn't:</strong> Issue with YOLO model for healthcare</li>
+            </ul>
+        </div>
+    </div>
+
+    <script>
+        function updateStatus(feedId, type, message) {
+            const statusElement = document.getElementById(feedId + '-status');
+            statusElement.className = `status ${type}`;
+            statusElement.textContent = message;
+            
+            console.log(`[${feedId.toUpperCase()}] ${message}`);
+        }
+
+        // Add error logging for network issues
+        window.addEventListener('error', function(e) {
+            if (e.target.tagName === 'IMG') {
+                console.error('Image load error:', {
+                    src: e.target.src,
+                    alt: e.target.alt,
+                    error: e
+                });
+            }
+        });
+
+        // Log when page loads
+        console.log('Healthcare Feed Direct Test Page Loaded');
+        console.log('Check the images above to see which feeds are working');
+    </script>
+</body>
+</html>

@@ -7,7 +7,10 @@
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "clean": "rmdir /s /q node_modules 2>nul & del package-lock.json 2>nul & npm install",
+    "clean:install": "npm ci",
+    "clean:cache": "npm cache clean --force"
   },
   "keywords": [],
   "author": "",

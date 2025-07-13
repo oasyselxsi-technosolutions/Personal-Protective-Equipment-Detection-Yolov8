@@ -65,3 +65,22 @@ Error in api_generate_frames_webcam_construction: OpenCV(4.7.0) /io/opencv/modul
 
 Stable webcam released (construction)
 Segmentation fault (core dumped)
+
+----
+
+✅ All tests passed! Implementation looks good.
+
+📝 Usage examples:
+  - General detection: http://localhost:5000/ipcamera_stable/general
+  - Manufacturing: http://localhost:5000/ipcamera_stable/manufacturing
+  - Construction: http://localhost:5000/ipcamera_stable/construction
+  - Healthcare: http://localhost:5000/ipcamera_stable/healthcare
+  - Oil & Gas: http://localhost:5000/ipcamera_stable/oilgas
+  - Raw feed: http://localhost:5000/ipcamera_stable_raw/manufacturing
+
+📝 Convenience routes:
+  - Manufacturing: http://localhost:5000/ipcamera_manufacturing
+  - Construction: http://localhost:5000/ipcamera_construction
+  - Healthcare: http://localhost:5000/ipcamera_healthcare
+  - Oil & Gas: http://localhost:5000/ipcamera_oilgas
+(venv) PS C:\Users\yparvej\Documents\GitHub\Personal-Protective-Equipment-Detection-Yolov8> 

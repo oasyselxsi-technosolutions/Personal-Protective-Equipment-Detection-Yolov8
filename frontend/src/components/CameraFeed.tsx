@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { cameraFeeds, CameraFeedConfig } from '../config/cameraFeedConfig';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000/api";
@@ -40,6 +40,37 @@ const CameraFeed: React.FC = () => {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  // Component initialization logging
+  useEffect(() => {
+    console.log('🎥 [CameraFeed] Component mounted');
+    console.log('🎥 [CameraFeed] Available camera feeds:', cameraFeeds.length);
+    console.log('🎥 [CameraFeed] Camera feeds configuration:', cameraFeeds);
+    console.log('🎥 [CameraFeed] API Base URL:', API_BASE_URL);
+    console.log('🎥 [CameraFeed] Default selected feed:', cameraFeeds[0]);
+    
+    // Log healthcare feed specifically
+    const healthcareFeed = cameraFeeds.find(feed => feed.id === 'ipcamera_healthcare');
+    if (healthcareFeed) {
+      console.log('🏥 [CameraFeed] Healthcare feed found:', healthcareFeed);
+      console.log('🏥 [CameraFeed] Healthcare URL to be used:', healthcareFeed.url);
+      
+      // Test the healthcare URL directly
+      fetch(healthcareFeed.url, { method: 'HEAD' })
+        .then(response => {
+          console.log('🏥 [CameraFeed] Healthcare URL HEAD test:', {
+            status: response.status,
+            contentType: response.headers.get('Content-Type'),
+            url: healthcareFeed.url
+          });
+        })
+        .catch(error => {
+          console.error('🏥 [CameraFeed] Healthcare URL HEAD test failed:', error);
+        });
+    } else {
+      console.warn('⚠️ [CameraFeed] Healthcare feed not found in configuration!');
+    }
+  }, []);
+
   // Compose the time range string for display
   const timeRangeDisplay =
     timeRange.from && timeRange.to
@@ -48,19 +79,39 @@ const CameraFeed: React.FC = () => {
 
   // Handle feed selection and reset error (WebCamFeed.tsx pattern)
   const handleFeedSelect = async (feed: CameraFeedConfig) => {
+    console.log(`🎥 [CameraFeed] Selecting feed:`, {
+      id: feed.id,
+      name: feed.name,
+      url: feed.url,
+      type: feed.type,
+      location: feed.location
+    });
+
     if (selectedFeed && selectedFeed.id !== feed.id) {
+      console.log(`🔄 [CameraFeed] Switching from ${selectedFeed.name} to ${feed.name}`);
       setShowFeed(false);
       setLoading(true);
       try {
-        await fetch(`${API_BASE_URL}/release_feed`, {
+        console.log(`🔌 [CameraFeed] Releasing previous feed of type: ${selectedFeed.type}`);
+        const response = await fetch(`${API_BASE_URL}/release_feed`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ feed_type: selectedFeed.type })
         });
+        
+        if (response.ok) {
+          console.log(`✅ [CameraFeed] Successfully released previous feed`);
+        } else {
+          console.warn(`⚠️ [CameraFeed] Release feed returned status: ${response.status}`);
+        }
       } catch (e) {
-        setFeedError("Failed to release previous feed. Please check backend.");
+        console.error(`❌ [CameraFeed] Failed to release previous feed:`, e);
+        // Don't show error to user for release_feed failures - it's not critical
+        // The new feed should still work even if release fails
+        console.log(`🔄 [CameraFeed] Continuing with feed switch despite release error`);
       }
       setTimeout(() => {
+        console.log(`⏰ [CameraFeed] Loading new feed after delay: ${feed.name}`);
         setSelectedFeed(feed);
         setFeedError(null);
         setImgKey(Date.now());
@@ -68,6 +119,7 @@ const CameraFeed: React.FC = () => {
         setLoading(false);
       }, 500);
     } else {
+      console.log(`🚀 [CameraFeed] Loading feed directly: ${feed.name}`);
       setSelectedFeed(feed);
       setFeedError(null);
       setImgKey(Date.now());
@@ -75,17 +127,16 @@ const CameraFeed: React.FC = () => {
     }
   };
 
-  // Error handlers for image/video
+  // Error handler for image/stream
   const handleImgError = () => {
-    setFeedError(
-      "Unable to connect to the server or stream. Please ensure the backend is running and the feed is available."
-    );
-  };
-
-  const handleVideoError = () => {
-    setFeedError(
-      "Unable to connect to the server or stream. Please ensure the backend is running and the feed is available."
-    );
+    const errorMessage = `Unable to connect to ${selectedFeed?.name || 'camera'} feed. Please ensure the backend is running and the camera is accessible.`;
+    console.error(`❌ [CameraFeed] Image load error:`, {
+      feedName: selectedFeed?.name,
+      feedUrl: selectedFeed?.url,
+      feedType: selectedFeed?.type,
+      errorMessage
+    });
+    setFeedError(errorMessage);
   };
 
   return (
@@ -147,23 +198,61 @@ const CameraFeed: React.FC = () => {
         {/* Video Area */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 16, minHeight: 400 }}>
           {selectedFeed ? (
-            showFeed && (selectedFeed.type === 'webcam' ? (
+            showFeed && (
+              // All camera feeds (webcam and ipcamera) are MJPEG streams, so use img tag
               <img
                 key={imgKey}
                 src={selectedFeed.url}
                 alt={selectedFeed.name}
-                style={{ width: '100%', borderRadius: 8, maxHeight: 500, objectFit: 'contain' }}
+                style={{ 
+                  width: '100%', 
+                  borderRadius: 8, 
+                  maxHeight: 500, 
+                  objectFit: 'contain',
+                  border: '1px solid #ddd'
+                }}
                 onError={handleImgError}
+                onLoad={() => {
+                  console.log(`✅ [CameraFeed] Successfully loaded feed:`, {
+                    name: selectedFeed.name,
+                    url: selectedFeed.url,
+                    type: selectedFeed.type,
+                    timestamp: new Date().toISOString()
+                  });
+                  setFeedError(null);
+                }}
+                onLoadStart={() => {
+                  console.log(`🔄 [CameraFeed] Starting to load feed:`, {
+                    name: selectedFeed.name,
+                    url: selectedFeed.url
+                  });
+                }}
+                onAbort={() => {
+                  console.warn(`⚠️ [CameraFeed] Feed load aborted:`, {
+                    name: selectedFeed.name,
+                    url: selectedFeed.url
+                  });
+                }}
+                onStalled={() => {
+                  console.warn(`⏸️ [CameraFeed] Feed load stalled:`, {
+                    name: selectedFeed.name,
+                    url: selectedFeed.url
+                  });
+                }}
+                onSuspend={() => {
+                  console.warn(`⏸️ [CameraFeed] Feed load suspended:`, {
+                    name: selectedFeed.name,
+                    url: selectedFeed.url
+                  });
+                }}
+                onProgress={() => {
+                  console.log(`📊 [CameraFeed] Feed loading progress:`, {
+                    name: selectedFeed.name,
+                    url: selectedFeed.url
+                  });
+                }}
               />
-            ) : (
-              <video
-                key={imgKey}
-                src={selectedFeed.url}
-                controls
-                style={{ width: '100%', borderRadius: 8, maxHeight: 500, objectFit: 'contain' }}
-                onError={handleVideoError}
-              />
-            ))
+            )
           ) : (
             <div style={{ color: '#888', textAlign: 'center', padding: 40 }}>
               Select a camera feed to view.
@@ -172,6 +261,11 @@ const CameraFeed: React.FC = () => {
           {feedError && (
             <div style={{ color: 'red', marginTop: 16, fontWeight: 500 }}>
               {feedError}
+            </div>
+          )}
+          {loading && (
+            <div style={{ color: '#007bff', marginTop: 16, fontWeight: 500 }}>
+              Loading feed...
             </div>
           )}
         </div>

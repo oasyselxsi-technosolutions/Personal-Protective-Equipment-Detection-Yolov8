@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response,jsonify,request,session
+from flask import Flask, render_template, Response,jsonify,request,session,make_response
 
 from flask_wtf import FlaskForm
 
@@ -18,15 +18,80 @@ from flask_cors import CORS
 # YOLO_Video is the python file which contains the code for our object detection model
 #Video Detection is the Function which performs Object Detection on Input Video
 from YOLO_Video import video_detection, video_detection_single_frame
-from YOLO_Video import detect_manufacturing_ppe
+from YOLO_Video import detect_manufacturing_ppe, detect_construction_ppe, detect_healthcare_ppe, detect_oilgas_ppe
 from ultralytics import YOLO
 from config import violation_recording_enabled
 import config
 # Add near your other imports
 from collections import defaultdict
 import re
+import time
 from datetime import datetime
+import logging
+import sys
+import os
+from logging.handlers import RotatingFileHandler
 
+# Configure comprehensive logging
+def setup_logging():
+    """Set up comprehensive logging for Flask app with file output."""
+    # Create logs directory if it doesn't exist
+    log_dir = "logs"
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
+    
+    # Set up the main logger
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    
+    # Clear any existing handlers
+    logger.handlers.clear()
+    
+    # Create formatters
+    detailed_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'
+    )
+    console_formatter = logging.Formatter(
+        '%(asctime)s - %(levelname)s - %(message)s'
+    )
+    
+    # File handler with rotation (max 10MB, keep 5 backups)
+    file_handler = RotatingFileHandler(
+        os.path.join(log_dir, 'flaskapp.log'),
+        maxBytes=10*1024*1024,  # 10MB
+        backupCount=5
+    )
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(detailed_formatter)
+    
+    # Console handler
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(console_formatter)
+    
+    # Add handlers to logger
+    logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    
+    # Set up Flask app logger
+    app_logger = logging.getLogger('flaskapp')
+    app_logger.setLevel(logging.DEBUG)
+    
+    # Set up werkzeug logger (Flask's built-in server)
+    werkzeug_logger = logging.getLogger('werkzeug')
+    werkzeug_logger.setLevel(logging.INFO)
+    
+    # Set up OpenCV/YOLO logger
+    cv_logger = logging.getLogger('cv2')
+    cv_logger.setLevel(logging.WARNING)
+    
+    return logger
+
+# Initialize logging
+app_logger = setup_logging()
+app_logger.info("="*80)
+app_logger.info("FLASK PPE DETECTION APP STARTING")
+app_logger.info("="*80)
 
 config.violation_recording_enabled = False
 
@@ -47,8 +112,18 @@ FLASK_DEBUG = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
 # Global variable to hold the webcam capture object
 webcam_cap = None
 app = Flask(__name__)
-CORS(app, resources={r"/api/*": {"origins": "*"}})
-# CORS(app, resources={r"/api/*": {"origins": "http://localhost:3000"}})
+
+# Enhanced CORS configuration for React frontend
+# Use flask-cors for cleaner configuration
+CORS(app, 
+     origins=["http://localhost:3000", "http://127.0.0.1:3000"],
+     methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+     allow_headers=["Content-Type", "Authorization", "X-Requested-With"],
+     supports_credentials=True)
+
+# Remove the duplicate @app.after_request CORS handler to avoid conflicts
+# The flask-cors library handles all CORS headers automatically
+
 # Add at the top
 violation_recording_enabled = False
 
@@ -491,11 +566,40 @@ def webcam_feed():
         print(f"Error in webcam_feed route: {str(e)}")
         return jsonify({"error": str(e)}), 500
 
-def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True):
-    """Generate frames from IP camera with enhanced stability and corruption prevention."""
+def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True, domain='general'):
+    """Generate frames from IP camera with enhanced stability and domain-specific PPE detection.
+    
+    Args:
+        ip_camera_url (str): The IP camera URL to connect to
+        apply_yolo (bool): Whether to apply YOLO detection (default: True)
+        domain (str): PPE domain - 'general', 'manufacturing', 'construction', 'healthcare', or 'oilgas' (default: 'general')
+    """
     cap = None
+    
+    app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Starting frame generation")
+    app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Parameters: url={ip_camera_url}, yolo={apply_yolo}, domain={domain}")
+    
+    # Domain detection function mapping
+    domain_functions = {
+        'general': video_detection_single_frame,
+        'manufacturing': detect_manufacturing_ppe,
+        'construction': detect_construction_ppe,
+        'healthcare': detect_healthcare_ppe,
+        'oilgas': detect_oilgas_ppe
+    }
+    
+    # Validate domain parameter
+    if domain not in domain_functions:
+        app_logger.error(f"🎬 [FRAME-GEN-{domain.upper()}] Unsupported domain '{domain}'. Supported: {list(domain_functions.keys())}")
+        app_logger.warning(f"🎬 [FRAME-GEN-{domain.upper()}] Defaulting to 'general' domain")
+        domain = 'general'
+    
+    detect_function = domain_functions[domain]
+    app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Using detection function: {detect_function.__name__}")
+    model = None  # Initialize model variable
+    
     try:
-        print(f"Attempting to connect to IP camera (stable): {ip_camera_url}")
+        app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Attempting to connect to IP camera: {ip_camera_url}")
         cap = cv2.VideoCapture(ip_camera_url)
         
         # Enhanced camera properties for stability
@@ -527,6 +631,12 @@ def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True):
         print(f"Camera opened with resolution: {actual_width}x{actual_height} @ {actual_fps:.1f}fps")
         
         print("Camera connection successful, starting stable frame generation...")
+        
+        # Load YOLO model if domain-specific detection is needed
+        if apply_yolo and domain != 'general':
+            print(f"Loading YOLO model for {domain} domain...")
+            model = YOLO("YOLO-Weights/bestest.pt")
+        
         frame_count = 0
         consecutive_failures = 0
         max_consecutive_failures = 5
@@ -630,7 +740,7 @@ def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True):
                 continue
             
             if frame_count % 50 == 0:  # Log every 50 processed frames
-                print(f"Processed {frame_count} stable frames (failures: {consecutive_failures})")
+                print(f"Processed {frame_count} stable frames ({domain} domain, failures: {consecutive_failures})")
             
             try:
                 if apply_yolo:
@@ -639,11 +749,21 @@ def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True):
                     if h > 720 or w > 1280:
                         # Resize to a more manageable size for YOLO
                         yolo_frame = cv2.resize(frame, (1280, 720))
-                        processed_frame = video_detection_single_frame(yolo_frame)
+                        
+                        # Apply domain-specific or general detection
+                        if domain != 'general':
+                            processed_frame = detect_function(yolo_frame, model)
+                        else:
+                            processed_frame = video_detection_single_frame(yolo_frame)
+                        
                         # Resize back to original size if needed
                         processed_frame = cv2.resize(processed_frame, (w, h))
                     else:
-                        processed_frame = video_detection_single_frame(frame)
+                        # Apply domain-specific or general detection
+                        if domain != 'general':
+                            processed_frame = detect_function(frame, model)
+                        else:
+                            processed_frame = video_detection_single_frame(frame)
                 else:
                     processed_frame = frame
                 
@@ -684,7 +804,7 @@ def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True):
     finally:
         if cap is not None:
             cap.release()
-            print("Stable camera released")
+            print(f"Stable camera released ({domain} domain)")
 
 def generate_frames_ip_camera_adaptive(ip_camera_url, apply_yolo=True):
     """Generate frames from IP camera with adaptive resolution handling for high-res cameras."""
@@ -897,259 +1017,148 @@ def generate_frames_ip_camera_adaptive(ip_camera_url, apply_yolo=True):
             cap.release()
             print("Adaptive camera released")
 
-@app.route('/ipcamera_stable')
-def ipcamera_stable():
-    """Route to display stable IP camera feed with YOLO detection."""
+# Domain-specific IP camera routes
+@app.route('/ipcamera_stable/<domain>')
+def ipcamera_stable_domain(domain):
+    """Route to display stable IP camera feed with domain-specific PPE detection."""
+    app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] ipcamera_stable_domain called with domain: {domain}")
+    
     try:
+        # Validate domain
+        valid_domains = ['general', 'manufacturing', 'construction', 'healthcare', 'oilgas']
+        if domain not in valid_domains:
+            error_msg = f"Invalid domain '{domain}'. Valid domains: {valid_domains}"
+            app_logger.error(f"🎯 [DOMAIN-{domain.upper()}] {error_msg}")
+            return jsonify({"error": error_msg}), 400
+        
+        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Domain validation passed")
+        
         # Get camera URLs from environment variables
         camera_urls = get_camera_urls()
+        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Generated {len(camera_urls)} camera URLs to test")
+        app_logger.debug(f"🎯 [DOMAIN-{domain.upper()}] Camera URLs: {camera_urls}")
         
         working_url = None
         
         # Try each URL format
-        for url in camera_urls:
-            print(f"Testing camera URL (stable): {url}")
-            test_cap = cv2.VideoCapture(url)
-            test_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            
-            if test_cap.isOpened():
-                ret, frame = test_cap.read()
-                test_cap.release()
-                if ret and frame is not None:
-                    working_url = url
-                    print(f"✓ Successfully connected to (stable): {url}")
-                    break
-            else:
-                test_cap.release()
-        
-        if not working_url:
-            return jsonify({
-                "error": "Cannot connect to IP camera (stable)"
-            }), 500
-        
-        print(f"Using working camera URL (stable): {working_url}")
-        return Response(generate_frames_ip_camera_stable(working_url, apply_yolo=True), 
-                       mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in ipcamera_stable route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/ipcamera_stable_raw')
-def ipcamera_stable_raw():
-    """Route to display stable IP camera feed without YOLO detection."""
-    try:
-        # Get camera URLs from environment variables
-        camera_urls = get_camera_urls()
-        
-        working_url = None
-        
-        # Try each URL format
-        for url in camera_urls:
-            print(f"Testing camera URL (stable raw): {url}")
-            test_cap = cv2.VideoCapture(url)
-            test_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            
-            if test_cap.isOpened():
-                ret, frame = test_cap.read()
-                test_cap.release()
-                if ret and frame is not None:
-                    working_url = url
-                    print(f"✓ Successfully connected to (stable raw): {url}")
-                    break
-            else:
-                test_cap.release()
-        
-        if not working_url:
-            return jsonify({
-                "error": "Cannot connect to IP camera (stable raw)"
-            }), 500
-        
-        print(f"Using working camera URL (stable raw): {working_url}")
-        return Response(generate_frames_ip_camera_stable(working_url, apply_yolo=False), 
-                       mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in ipcamera_stable_raw route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/ipcamera_adaptive')
-def ipcamera_adaptive():
-    """Route to display adaptive IP camera feed with YOLO detection (handles high-res cameras)."""
-    try:
-        # Get camera URLs from environment variables
-        camera_urls = get_camera_urls()
-        
-        working_url = None
-        
-        # Try each URL format
-        for url in camera_urls:
-            print(f"Testing camera URL (adaptive): {url}")
-            test_cap = cv2.VideoCapture(url)
-            test_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            
-            if test_cap.isOpened():
-                ret, frame = test_cap.read()
-                test_cap.release()
-                if ret and frame is not None:
-                    working_url = url
-                    print(f"✓ Successfully connected to (adaptive): {url}")
-                    break
-            else:
-                test_cap.release()
-        
-        if not working_url:
-            return jsonify({
-                "error": "Cannot connect to IP camera (adaptive)"
-            }), 500
-        
-        print(f"Using working camera URL (adaptive): {working_url}")
-        return Response(generate_frames_ip_camera_adaptive(working_url, apply_yolo=True), 
-                       mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in ipcamera_adaptive route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/ipcamera_adaptive_raw')
-def ipcamera_adaptive_raw():
-    """Route to display adaptive IP camera feed without YOLO detection (handles high-res cameras)."""
-    try:
-        # Get camera URLs from environment variables
-        camera_urls = get_camera_urls()
-        
-        working_url = None
-        
-        # Try each URL format
-        for url in camera_urls:
-            print(f"Testing camera URL (adaptive raw): {url}")
-            test_cap = cv2.VideoCapture(url)
-            test_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-            
-            if test_cap.isOpened():
-                ret, frame = test_cap.read()
-                test_cap.release()
-                if ret and frame is not None:
-                    working_url = url
-                    print(f"✓ Successfully connected to (adaptive raw): {url}")
-                    break
-            else:
-                test_cap.release()
-        
-        if not working_url:
-            return jsonify({
-                "error": "Cannot connect to IP camera (adaptive raw)"
-            }), 500
-        
-        print(f"Using working camera URL (adaptive raw): {working_url}")
-        return Response(generate_frames_ip_camera_adaptive(working_url, apply_yolo=False), 
-                       mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in ipcamera_adaptive_raw route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/webapp_stable')
-def webapp_stable():
-    """Route to display stable webcam feed with YOLO detection."""
-    try:
-        return Response(generate_frames_webcam_stable(), 
-                       mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in webapp_stable route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-def generate_frames_webcam_stable():
-    """Generate frames from webcam with enhanced stability."""
-    cap = None
-    try:
-        print("Attempting to connect to webcam (stable)...")
-        cap = cv2.VideoCapture(0)  # Use default webcam
-        
-        # Enhanced webcam properties
-        cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        cap.set(cv2.CAP_PROP_FPS, 15)  # Moderate FPS for stability
-        
-        if not cap.isOpened():
-            print("Error: Could not open webcam")
-            return
-        
-        print("Webcam connection successful, starting stable frame generation...")
-        frame_count = 0
-        consecutive_failures = 0
-        last_valid_frame = None
-        frame_skip_counter = 0
-        
-        while True:
-            # Clear buffer for webcam as well
-            cap.grab()
-            success, frame = cap.retrieve()
-            
-            if not success or frame is None:
-                consecutive_failures += 1
-                print(f"Failed to read webcam frame {frame_count}, consecutive failures: {consecutive_failures}")
-                
-                # Use cached frame during failures
-                if last_valid_frame is not None and consecutive_failures < 5:
-                    frame = last_valid_frame.copy()
-                    success = True
-                
-                if consecutive_failures >= 10:
-                    print("Too many webcam failures, stopping stream")
-                    break
-                
-                if not success:
-                    continue
-            # Validate webcam frame
-            if frame is not None and frame.size > 0:
-                frame_mean = frame.mean()
-                h, w = frame.shape[:2]
-                
-                if frame_mean > 5 and h > 100 and w > 100:
-                    last_valid_frame = frame.copy()
-                    consecutive_failures = 0
-                else:
-                    if last_valid_frame is not None:
-                        frame = last_valid_frame.copy()
-                    else:
-                        continue
-            else:
-                continue
-            
-            frame_count += 1
-            
-            # Frame rate control
-            frame_skip_counter += 1
-            if frame_skip_counter % 2 != 0:  # Process every 2nd frame
-                continue
-            
-            if frame_count % 50 == 0:
-                print(f"Processed {frame_count} stable webcam frames")
+        for i, url in enumerate(camera_urls):
+            app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Testing camera URL {i+1}/{len(camera_urls)}: {url}")
             
             try:
-                # Apply YOLO detection to webcam frame
-                processed_frame = video_detection_single_frame(frame)
+                test_cap = cv2.VideoCapture(url)
+                test_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 
-                # Enhanced encoding
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, 80]
-                ref, buffer = cv2.imencode('.jpg', processed_frame, encode_params)
-                
-                if not ref or buffer is None:
-                    continue
-                    
-                frame_bytes = buffer.tobytes()
-                if len(frame_bytes) > 100:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-                       
-            except Exception as e:
-                print(f"Error processing webcam frame: {str(e)}")
-                continue
-                
+                if test_cap.isOpened():
+                    app_logger.debug(f"🎯 [DOMAIN-{domain.upper()}] Camera opened successfully, testing frame read...")
+                    ret, frame = test_cap.read()
+                    test_cap.release()
+                    if ret and frame is not None:
+                        working_url = url
+                        app_logger.info(f"✅ [DOMAIN-{domain.upper()}] Successfully connected to: {url}")
+                        break
+                    else:
+                        app_logger.warning(f"⚠️ [DOMAIN-{domain.upper()}] Connected but no frames from: {url}")
+                else:
+                    test_cap.release()
+                    app_logger.warning(f"❌ [DOMAIN-{domain.upper()}] Failed to connect to: {url}")
+            except Exception as url_error:
+                app_logger.error(f"❌ [DOMAIN-{domain.upper()}] Exception testing URL {url}: {str(url_error)}")
+        
+        if not working_url:
+            error_msg = f"Cannot connect to IP camera (stable {domain})"
+            app_logger.error(f"🎯 [DOMAIN-{domain.upper()}] {error_msg}")
+            app_logger.error(f"🎯 [DOMAIN-{domain.upper()}] All {len(camera_urls)} camera URLs failed")
+            return jsonify({"error": error_msg}), 500
+        
+        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Using working camera URL: {working_url}")
+        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Starting frame generation with YOLO detection...")
+        
+        return Response(generate_frames_ip_camera_stable(working_url, apply_yolo=True, domain=domain), 
+                       mimetype='multipart/x-mixed-replace; boundary=frame')
     except Exception as e:
-        print(f"Error in generate_frames_webcam_stable: {str(e)}")
-    finally:
-        if cap is not None:
-            cap.release()
-            print("Stable webcam released")
+        app_logger.error(f"❌ [DOMAIN-{domain.upper()}] Error in ipcamera_stable_domain: {str(e)}")
+        app_logger.exception(f"❌ [DOMAIN-{domain.upper()}] Full exception details:")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/ipcamera_stable_raw/<domain>')
+def ipcamera_stable_raw_domain(domain):
+    """Route to display stable IP camera feed without YOLO detection for specific domain."""
+    try:
+        # Validate domain
+        valid_domains = ['general', 'manufacturing', 'construction', 'healthcare', 'oilgas']
+        if domain not in valid_domains:
+            return jsonify({
+                "error": f"Invalid domain '{domain}'. Valid domains: {valid_domains}"
+            }), 400
+        
+        # Get camera URLs from environment variables
+        camera_urls = get_camera_urls()
+        
+        working_url = None
+        
+        # Try each URL format
+        for url in camera_urls:
+            print(f"Testing camera URL (stable raw {domain}): {url}")
+            test_cap = cv2.VideoCapture(url)
+            test_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
+            
+            if test_cap.isOpened():
+                ret, frame = test_cap.read()
+                test_cap.release()
+                if ret and frame is not None:
+                    working_url = url
+                    print(f"✓ Successfully connected to (stable raw {domain}): {url}")
+                    break
+            else:
+                test_cap.release()
+        
+        if not working_url:
+            return jsonify({
+                "error": f"Cannot connect to IP camera (stable raw {domain})"
+            }), 500
+        
+        print(f"Using working camera URL (stable raw {domain}): {working_url}")
+        return Response(generate_frames_ip_camera_stable(working_url, apply_yolo=False, domain=domain), 
+                       mimetype='multipart/x-mixed-replace; boundary=frame')
+    except Exception as e:
+        print(f"Error in ipcamera_stable_raw_{domain} route: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+# Convenience routes for specific domains
+@app.route('/ipcamera_manufacturing')
+def ipcamera_manufacturing():
+    """Route to display IP camera feed with Manufacturing PPE detection."""
+    print("[DEBUG] /ipcamera_manufacturing endpoint called")
+    return ipcamera_stable_domain('manufacturing')
+
+@app.route('/ipcamera_construction')
+def ipcamera_construction():
+    """Route to display IP camera feed with Construction PPE detection."""
+    print("[DEBUG] /ipcamera_construction endpoint called")
+    return ipcamera_stable_domain('construction')
+
+@app.route('/ipcamera_healthcare')
+def ipcamera_healthcare():
+    """Route to display IP camera feed with Healthcare PPE detection."""
+    app_logger.info("🏥 [HEALTHCARE] /ipcamera_healthcare endpoint called")
+    app_logger.debug(f"🏥 [HEALTHCARE] Request headers: {dict(request.headers)}")
+    app_logger.debug(f"🏥 [HEALTHCARE] Request args: {dict(request.args)}")
+    
+    try:
+        result = ipcamera_stable_domain('healthcare')
+        app_logger.info("🏥 [HEALTHCARE] Successfully called ipcamera_stable_domain('healthcare')")
+        return result
+    except Exception as e:
+        app_logger.error(f"🏥 [HEALTHCARE] Error in ipcamera_healthcare route: {str(e)}")
+        app_logger.exception("🏥 [HEALTHCARE] Full exception details:")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/ipcamera_oilgas')
+def ipcamera_oilgas():
+    """Route to display IP camera feed with Oil & Gas PPE detection."""
+    print("[DEBUG] /ipcamera_oilgas endpoint called")
+    return ipcamera_stable_domain('oilgas')
+
 
 @app.route('/api/dashboard')
 def dashboard():
@@ -1357,12 +1366,28 @@ def api_generate_frames_webcam_yolo():
             webcam_cap.release()
             print("Stable webcam released")
 
-
-
-
-def api_generate_frames_webcam_manufacturing():
-    """Generate frames from webcam with Manufacturing PPE detection."""
+# Unified domain-specific webcam streaming
+def api_generate_frames_webcam_unified(domain='manufacturing'):
+    """Generate frames from webcam with domain-specific PPE detection.
+    
+    Args:
+        domain (str): PPE domain - 'manufacturing', 'construction', 'healthcare', or 'oilgas'
+    """
     global webcam_cap
+    
+    # Domain detection function mapping
+    domain_functions = {
+        'manufacturing': detect_manufacturing_ppe,
+        'construction': detect_construction_ppe,
+        'healthcare': detect_healthcare_ppe,
+        'oilgas': detect_oilgas_ppe
+    }
+    
+    if domain not in domain_functions:
+        print(f"Error: Unsupported domain '{domain}'. Supported: {list(domain_functions.keys())}")
+        return
+    
+    detect_function = domain_functions[domain]
     max_retries = 15
     retry_delay = 1  # seconds
 
@@ -1370,18 +1395,18 @@ def api_generate_frames_webcam_manufacturing():
     for attempt in range(max_retries):
         webcam_cap = cv2.VideoCapture(0)
         if webcam_cap.isOpened():
-            print("Webcam connection successful, starting frame generation (manufacturing)...")
+            print(f"Webcam connection successful, starting frame generation ({domain})...")
             break
         else:
             print(f"Error: Could not open webcam (attempt {attempt+1}/{max_retries})")
             webcam_cap.release()
             time.sleep(retry_delay)
     else:
-        print("Failed to open webcam after retries (manufacturing).")
+        print(f"Failed to open webcam after retries ({domain}).")
         return
 
     try:
-        print("Attempting to connect to webcam (manufacturing)...")
+        print(f"Attempting to connect to webcam ({domain})...")
         # Set properties
         webcam_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
         webcam_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
@@ -1389,10 +1414,10 @@ def api_generate_frames_webcam_manufacturing():
         webcam_cap.set(cv2.CAP_PROP_FPS, 15)  # Moderate FPS for stability
 
         if not webcam_cap.isOpened():
-            print("Error: Could not open webcam (manufacturing)")
+            print(f"Error: Could not open webcam ({domain})")
             return
 
-        print("Webcam connection successful, starting stable frame generation (manufacturing)...")
+        print(f"Webcam connection successful, starting stable frame generation ({domain})...")
         frame_count = 0
         consecutive_failures = 0
         last_valid_frame = None
@@ -1403,7 +1428,7 @@ def api_generate_frames_webcam_manufacturing():
 
         while True:
             if webcam_cap is None:
-                print("api_generate_frames_webcam_manufacturing- Webcam has been released, stopping frame generation.")
+                print(f"api_generate_frames_webcam_unified ({domain}) - Webcam has been released, stopping frame generation.")
                 break
 
             webcam_cap.grab()
@@ -1418,7 +1443,7 @@ def api_generate_frames_webcam_manufacturing():
                     success = True
 
                 if consecutive_failures >= 10:
-                    print("Too many webcam failures, stopping stream (manufacturing)")
+                    print(f"Too many webcam failures, stopping stream ({domain})")
                     break
 
                 if not success:
@@ -1445,11 +1470,11 @@ def api_generate_frames_webcam_manufacturing():
                 continue
 
             if frame_count % 50 == 0:
-                print(f"Processed {frame_count} stable webcam frames (manufacturing)")
+                print(f"Processed {frame_count} stable webcam frames ({domain})")
 
             try:
-                # Apply Manufacturing PPE detection to webcam frame
-                processed_frame = detect_manufacturing_ppe(frame, model)
+                # Apply domain-specific PPE detection to webcam frame
+                processed_frame = detect_function(frame, model)
                 encode_params = [cv2.IMWRITE_JPEG_QUALITY, 80]
                 ref, buffer = cv2.imencode('.jpg', processed_frame, encode_params)
 
@@ -1462,137 +1487,27 @@ def api_generate_frames_webcam_manufacturing():
                            b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
 
             except Exception as e:
-                print(f"Error processing webcam frame (manufacturing): {str(e)}")
+                print(f"Error processing webcam frame ({domain}): {str(e)}")
                 continue
 
     except Exception as e:
-        print(f"Error in api_generate_frames_webcam_manufacturing: {str(e)}")
+        print(f"Error in api_generate_frames_webcam_unified ({domain}): {str(e)}")
     finally:
         if webcam_cap is not None:
             webcam_cap.release()
-            print("Stable webcam released (manufacturing)")
+            print(f"Stable webcam released ({domain})")
 
 
-from YOLO_Video import detect_construction_ppe
-
-def api_generate_frames_webcam_construction():
-    """Generate frames from webcam with Construction PPE detection."""
-    global webcam_cap
-    max_retries = 15
-    retry_delay = 1  # seconds
-
-    # Try to open the webcam with retries
-    for attempt in range(max_retries):
-        webcam_cap = cv2.VideoCapture(0)
-        if webcam_cap.isOpened():
-            print("Webcam connection successful, starting frame generation (construction)...")
-            break
-        else:
-            print(f"Error: Could not open webcam (attempt {attempt+1}/{max_retries})")
-            webcam_cap.release()
-            time.sleep(retry_delay)
-    else:
-        print("Failed to open webcam after retries (construction).")
-        return
-
-    try:
-        print("Attempting to connect to webcam (construction)...")
-        # Set properties
-        webcam_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        webcam_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        webcam_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        webcam_cap.set(cv2.CAP_PROP_FPS, 15)  # Moderate FPS for stability
-
-        if not webcam_cap.isOpened():
-            print("Error: Could not open webcam (construction)")
-            return
-
-        print("Webcam connection successful, starting stable frame generation (construction)...")
-        frame_count = 0
-        consecutive_failures = 0
-        last_valid_frame = None
-        frame_skip_counter = 0
-
-        # Load YOLO model once for efficiency
-        model = YOLO("YOLO-Weights/bestest.pt")
-
-        while True:
-
-            if webcam_cap is None:
-                print("api_generate_frames_webcam_construction- Webcam has been released, stopping frame generation.")
-                break   
-
-            webcam_cap.grab()
-            success, frame = webcam_cap.retrieve()
-
-            if not success or frame is None:
-                consecutive_failures += 1
-                print(f"Failed to read webcam frame {frame_count}, consecutive failures: {consecutive_failures}")
-
-                if last_valid_frame is not None and consecutive_failures < 5:
-                    frame = last_valid_frame.copy()
-                    success = True
-
-                if consecutive_failures >= 10:
-                    print("Too many webcam failures, stopping stream (construction)")
-                    break
-
-                if not success:
-                    continue
-
-            if frame is not None and frame.size > 0:
-                frame_mean = frame.mean()
-                h, w = frame.shape[:2]
-
-                if frame_mean > 5 and h > 100 and w > 100:
-                    last_valid_frame = frame.copy()
-                    consecutive_failures = 0
-                else:
-                    if last_valid_frame is not None:
-                        frame = last_valid_frame.copy()
-                    else:
-                        continue
-            else:
-                continue
-
-            frame_count += 1
-            frame_skip_counter += 1
-            if frame_skip_counter % 2 != 0:
-                continue
-
-            if frame_count % 50 == 0:
-                print(f"Processed {frame_count} stable webcam frames (construction)")
-
-            try:
-                # Apply Construction PPE detection to webcam frame
-                processed_frame = detect_construction_ppe(frame, model)
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, 80]
-                ref, buffer = cv2.imencode('.jpg', processed_frame, encode_params)
-
-                if not ref or buffer is None:
-                    continue
-
-                frame_bytes = buffer.tobytes()
-                if len(frame_bytes) > 100:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
-            except Exception as e:
-                print(f"Error processing webcam frame (construction): {str(e)}")
-                continue
-
-    except Exception as e:
-        print(f"Error in api_generate_frames_webcam_construction: {str(e)}")
-    finally:
-        if webcam_cap is not None:
-            webcam_cap.release()
-            print("Stable webcam released (construction)")
-
-# Global variable to hold the webcam capture object
-webcam_cap = None
-
-@app.route('/api/release_webcam', methods=['POST'])
+@app.route('/api/release_webcam', methods=['POST', 'OPTIONS'])
 def release_webcam():
+    # Handle preflight CORS request
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
+
     global webcam_cap
     print("[DEBUG] /api/release_webcam endpoint called")
     try:
@@ -1600,51 +1515,68 @@ def release_webcam():
             webcam_cap.release()
             webcam_cap = None
             print("[DEBUG] Webcam released by API call")
-            return jsonify({"status": "released"}), 200
+            response = jsonify({"status": "released"})
+            response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+            return response, 200
         else:
             print("[DEBUG] No webcam to release")
-            return jsonify({"status": "no webcam to release"}), 200
+            response = jsonify({"status": "no webcam to release"})
+            response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+            return response, 200
     except Exception as e:
         print(f"[DEBUG] Error releasing webcam: {str(e)}")
-        return jsonify({"status": "error", "message": str(e)}), 500
+        response = jsonify({"status": "error", "message": str(e)})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        return response, 500
 
-@app.route('/api/release_feed', methods=['POST'])
+@app.route('/api/release_feed', methods=['POST', 'OPTIONS'])
 def release_feed():
     """
     Release the current feed resource (webcam or ipcamera).
     Expects JSON: { "feed_type": "webcam" | "ipcamera" }
     """
+    # Handle preflight CORS request
+    if request.method == 'OPTIONS':
+        response = jsonify({})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization')
+        response.headers.add('Access-Control-Allow-Methods', 'GET,PUT,POST,DELETE,OPTIONS')
+        return response
+
     global webcam_cap
     data = request.get_json() or {}
     feed_type = data.get("feed_type", "webcam")
 
     if feed_type == "webcam":
-       
         try:
             if webcam_cap is not None:
                 webcam_cap.release()
                 webcam_cap = None
                 print("[DEBUG] Webcam released by generic API call")
-                return jsonify({"status": "released"}), 200
+                response = jsonify({"status": "released"})
+                response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+                return response, 200
             else:
                 print("[DEBUG] No webcam to release")
-                return jsonify({"status": "no webcam to release"}), 200
+                response = jsonify({"status": "no webcam to release"})
+                response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+                return response, 200
         except Exception as e:
             print(f"[DEBUG] Error releasing webcam: {str(e)}")
-            return jsonify({"status": "error", "message": str(e)}), 500
+            response = jsonify({"status": "error", "message": str(e)})
+            response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+            return response, 500
 
     elif feed_type == "ipcamera":
         # If you have a global IP camera capture object, release it here
-        # Example:
-        # global ipcamera_cap
-        # if ipcamera_cap is not None:
-        #     ipcamera_cap.release()
-        #     ipcamera_cap = None
-        #     print("[DEBUG] IP camera released by generic API call")
-        #     return jsonify({"status": "ipcamera released"}), 200
-        return jsonify({"status": "ipcamera release not implemented"}), 200
+        print("[DEBUG] IP camera release requested")
+        response = jsonify({"status": "ipcamera release not implemented"})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        return response, 200
     else:
-        return jsonify({"status": "unknown feed type"}), 400
+        response = jsonify({"status": "unknown feed type"})
+        response.headers.add('Access-Control-Allow-Origin', 'http://localhost:3000')
+        return response, 400
         
 @app.route('/api/webcam_raw')
 def webcam_raw():
@@ -1670,272 +1602,25 @@ def webcam_yolo():
 def webcam_manufacturing():
     """Route to display webcam feed with Manufacturing PPE detection."""
     print("[DEBUG] /api/webcam_manufacturing endpoint called")
-    try:
-        return Response(api_generate_frames_webcam_manufacturing(), mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in webcam_manufacturing route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
+    return ipcamera_stable_domain('manufacturing')
 
 @app.route('/api/webcam_construction')
 def webcam_construction():
     """Route to display webcam feed with Construction PPE detection."""
     print("[DEBUG] /api/webcam_construction endpoint called")
-    try:
-        return Response(api_generate_frames_webcam_construction(), mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in webcam_construction route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-
-from YOLO_Video import detect_healthcare_ppe
-
-def api_generate_frames_webcam_healthcare():
-    """Generate frames from webcam with Healthcare PPE detection."""
-    global webcam_cap
-    max_retries = 15
-    retry_delay = 1  # seconds
-
-    # Try to open the webcam with retries
-    for attempt in range(max_retries):
-        webcam_cap = cv2.VideoCapture(0)
-        if webcam_cap.isOpened():
-            print("Webcam connection successful, starting frame generation (healthcare)...")
-            break
-        else:
-            print(f"Error: Could not open webcam (attempt {attempt+1}/{max_retries})")
-            webcam_cap.release()
-            time.sleep(retry_delay)
-    else:
-        print("Failed to open webcam after retries (healthcare).")
-        return
-
-    try:
-        print("Attempting to connect to webcam (healthcare)...")
-        # Set properties
-        webcam_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        webcam_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        webcam_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        webcam_cap.set(cv2.CAP_PROP_FPS, 15)  # Moderate FPS for stability
-
-        if not webcam_cap.isOpened():
-            print("Error: Could not open webcam (healthcare)")
-            return
-
-        print("Webcam connection successful, starting stable frame generation (healthcare)...")
-        frame_count = 0
-        consecutive_failures = 0
-        last_valid_frame = None
-        frame_skip_counter = 0
-
-        # Load YOLO model once for efficiency
-        model = YOLO("YOLO-Weights/bestest.pt")
-
-        while True:
-
-            if webcam_cap is None:
-                print("api_generate_frames_webcam_healthcare- Webcam has been released, stopping frame generation.")
-                break   
-
-            webcam_cap.grab()
-            success, frame = webcam_cap.retrieve()
-
-            if not success or frame is None:
-                consecutive_failures += 1
-                print(f"Failed to read webcam frame {frame_count}, consecutive failures: {consecutive_failures}")
-
-                if last_valid_frame is not None and consecutive_failures < 5:
-                    frame = last_valid_frame.copy()
-                    success = True
-
-                if consecutive_failures >= 10:
-                    print("Too many webcam failures, stopping stream (healthcare)")
-                    break
-
-                if not success:
-                    continue
-
-            if frame is not None and frame.size > 0:
-                frame_mean = frame.mean()
-                h, w = frame.shape[:2]
-
-                if frame_mean > 5 and h > 100 and w > 100:
-                    last_valid_frame = frame.copy()
-                    consecutive_failures = 0
-                else:
-                    if last_valid_frame is not None:
-                        frame = last_valid_frame.copy()
-                    else:
-                        continue
-            else:
-                continue
-
-            frame_count += 1
-            frame_skip_counter += 1
-            if frame_skip_counter % 2 != 0:
-                continue
-
-            if frame_count % 50 == 0:
-                print(f"Processed {frame_count} stable webcam frames (healthcare)")
-
-            try:
-                # Apply Healthcare PPE detection to webcam frame
-                processed_frame = detect_healthcare_ppe(frame, model)
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, 80]
-                ref, buffer = cv2.imencode('.jpg', processed_frame, encode_params)
-
-                if not ref or buffer is None:
-                    continue
-
-                frame_bytes = buffer.tobytes()
-                if len(frame_bytes) > 100:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
-            except Exception as e:
-                print(f"Error processing webcam frame (healthcare): {str(e)}")
-                continue
-
-    except Exception as e:
-        print(f"Error in api_generate_frames_webcam_healthcare: {str(e)}")
-    finally:
-        if webcam_cap is not None:
-            webcam_cap.release()
-            print("Stable webcam released (healthcare)")
+    return ipcamera_stable_domain('construction')
 
 @app.route('/api/webcam_healthcare')
 def webcam_healthcare():
     """Route to display webcam feed with Healthcare PPE detection."""
     print("[DEBUG] /api/webcam_healthcare endpoint called")
-    try:
-        return Response(api_generate_frames_webcam_healthcare(), mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in webcam_healthcare route: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-from YOLO_Video import detect_oilgas_ppe
-
-def api_generate_frames_webcam_oilgas():
-    """Generate frames from webcam with Oil & Gas PPE detection."""
-    global webcam_cap
-    max_retries = 15
-    retry_delay = 1  # seconds
-
-    # Try to open the webcam with retries
-    for attempt in range(max_retries):
-        webcam_cap = cv2.VideoCapture(0)
-        if webcam_cap.isOpened():
-            print("Webcam connection successful, starting frame generation (oilgas)...")
-            break
-        else:
-            print(f"Error: Could not open webcam (attempt {attempt+1}/{max_retries})")
-            webcam_cap.release()
-            time.sleep(retry_delay)
-    else:
-        print("Failed to open webcam after retries (oilgas).")
-        return
-
-    try:
-        print("Attempting to connect to webcam (oilgas)...")
-        # Set properties
-        webcam_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
-        webcam_cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
-        webcam_cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
-        webcam_cap.set(cv2.CAP_PROP_FPS, 15)  # Moderate FPS for stability
-
-        if not webcam_cap.isOpened():
-            print("Error: Could not open webcam (oilgas)")
-            return
-
-        print("Webcam connection successful, starting stable frame generation (oilgas)...")
-        frame_count = 0
-        consecutive_failures = 0
-        last_valid_frame = None
-        frame_skip_counter = 0
-
-        # Load YOLO model once for efficiency
-        model = YOLO("YOLO-Weights/bestest.pt")
-
-        while True:
-
-            if webcam_cap is None:
-                print("api_generate_frames_webcam_oilgas - Webcam has been released, stopping frame generation.")
-                break  
-
-            webcam_cap.grab()
-            success, frame = webcam_cap.retrieve()
-
-            if not success or frame is None:
-                consecutive_failures += 1
-                print(f"Failed to read webcam frame {frame_count}, consecutive failures: {consecutive_failures}")
-
-                if last_valid_frame is not None and consecutive_failures < 5:
-                    frame = last_valid_frame.copy()
-                    success = True
-
-                if consecutive_failures >= 10:
-                    print("Too many webcam failures, stopping stream (oilgas)")
-                    break
-
-                if not success:
-                    continue
-
-            if frame is not None and frame.size > 0:
-                frame_mean = frame.mean()
-                h, w = frame.shape[:2]
-
-                if frame_mean > 5 and h > 100 and w > 100:
-                    last_valid_frame = frame.copy()
-                    consecutive_failures = 0
-                else:
-                    if last_valid_frame is not None:
-                        frame = last_valid_frame.copy()
-                    else:
-                        continue
-            else:
-                continue
-
-            frame_count += 1
-            frame_skip_counter += 1
-            if frame_skip_counter % 2 != 0:
-                continue
-
-            if frame_count % 50 == 0:
-                print(f"Processed {frame_count} stable webcam frames (oilgas)")
-
-            try:
-                # Apply Oil & Gas PPE detection to webcam frame
-                processed_frame = detect_oilgas_ppe(frame, model)
-                encode_params = [cv2.IMWRITE_JPEG_QUALITY, 80]
-                ref, buffer = cv2.imencode('.jpg', processed_frame, encode_params)
-
-                if not ref or buffer is None:
-                    continue
-
-                frame_bytes = buffer.tobytes()
-                if len(frame_bytes) > 100:
-                    yield (b'--frame\r\n'
-                           b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-
-            except Exception as e:
-                print(f"Error processing webcam frame (oilgas): {str(e)}")
-                continue
-
-    except Exception as e:
-        print(f"Error in api_generate_frames_webcam_oilgas: {str(e)}")
-    finally:
-        if webcam_cap is not None:
-            webcam_cap.release()
-            print("Stable webcam released (oilgas)")
+    return ipcamera_stable_domain('healthcare')
 
 @app.route('/api/webcam_oilgas')
 def webcam_oilgas():
     """Route to display webcam feed with Oil & Gas PPE detection."""
     print("[DEBUG] /api/webcam_oilgas endpoint called")
-    try:
-        return Response(api_generate_frames_webcam_oilgas(), mimetype='multipart/x-mixed-replace; boundary=frame')
-    except Exception as e:
-        print(f"Error in webcam_oilgas route: {str(e)}")
-        return jsonify({"error": str(e)}), 500    
+    return ipcamera_stable_domain('oilgas')
 
 
 
@@ -2125,6 +1810,16 @@ def api_violations_by_type():
     result = [{"type": vtype, "count": count} for vtype, count in type_counts.items()]
     return jsonify(result)
 
+@app.route('/api/violations', methods=['OPTIONS'])
+def api_violations_options():
+    """Handle preflight CORS request for violations endpoint"""
+    response = make_response()
+    response.headers.add('Access-Control-Allow-Origin', '*')
+    response.headers.add('Access-Control-Allow-Headers', 'Content-Type,Authorization,X-Requested-With')
+    response.headers.add('Access-Control-Allow-Methods', 'GET,POST,PUT,DELETE,OPTIONS')
+    response.headers.add('Access-Control-Allow-Credentials', 'true')
+    return response
+
 @app.route('/api/violations')
 def api_violations():
     """
@@ -2189,14 +1884,29 @@ if __name__ == "__main__":
     port = int(os.environ.get('FLASK_PORT', 5000))
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
     
+    app_logger.info(f"🚀 [STARTUP] Initial configuration: host={host}, port={port}")
+    
     # Override with command line argument if provided
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])
             host = '0.0.0.0'  # Allow external access when port is specified
+            app_logger.info(f"🚀 [STARTUP] Command line override: port={port}, host={host}")
             print(f"Starting Flask app on {host}:{port}")
         except ValueError:
+            app_logger.error("🚀 [STARTUP] Invalid port number in command line. Using default configuration")
             print("Invalid port number. Using default configuration")
+    
+    # Use debug setting from environment variable
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    
+    app_logger.info(f"🚀 [STARTUP] Final configuration:")
+    app_logger.info(f"🚀 [STARTUP]   - Host: {host}")
+    app_logger.info(f"🚀 [STARTUP]   - Port: {port}")
+    app_logger.info(f"🚀 [STARTUP]   - Debug mode: {debug_mode}")
+    app_logger.info(f"🚀 [STARTUP]   - Camera IP: {CAMERA_IP}")
+    app_logger.info(f"🚀 [STARTUP]   - Camera Port: {CAMERA_PORT}")
+    app_logger.info(f"🚀 [STARTUP]   - Camera Username: {CAMERA_USERNAME}")
     
     print(f"Flask app running on http://{host}:{port}")
     print("Available endpoints:")
@@ -2206,10 +1916,19 @@ if __name__ == "__main__":
     print(f"  - IP Camera Stable (YOLO): http://{host}:{port}/ipcamera_stable")
     print(f"  - IP Camera Adaptive (YOLO): http://{host}:{port}/ipcamera_adaptive")
     print(f"  - Webcam (YOLO): http://{host}:{port}/webapp")
+    print(f"  - Healthcare PPE: http://{host}:{port}/ipcamera_stable/healthcare")
+    print(f"  - Manufacturing PPE: http://{host}:{port}/ipcamera_stable/manufacturing")
+    print(f"  - Construction PPE: http://{host}:{port}/ipcamera_stable/construction")
+    print(f"  - Oil & Gas PPE: http://{host}:{port}/ipcamera_stable/oilgas")
     
-    # Use debug setting from environment variable
-    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    app_logger.info("🚀 [STARTUP] Available domain-specific endpoints:")
+    for domain in ['healthcare', 'manufacturing', 'construction', 'oilgas']:
+        endpoint = f"http://{host}:{port}/ipcamera_stable/{domain}"
+        app_logger.info(f"🚀 [STARTUP]   - {domain.capitalize()} PPE: {endpoint}")
+    
+    app_logger.info("🚀 [STARTUP] Starting Flask application...")
     print(f"Debug mode: {debug_mode}")
+    print(f"📝 Logs are being written to: logs/flaskapp.log")
     
     app.run(debug=debug_mode, port=port, host=host)
 
