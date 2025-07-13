@@ -8,7 +8,7 @@ function getToday() {
 }
 
 const Reports: React.FC = () => {
-  const [tab, setTab] = useState<'domain' | 'timeline' | 'recent'>('domain');
+  const [tab, setTab] = useState<'domain' | 'timeline' | 'recent' | 'type'>('domain');
   const [date, setDate] = useState('');
   const [counts, setCounts] = useState<{ domain: string, count: number }[]>([]);
   const [timelineFrom, setTimelineFrom] = useState('');
@@ -16,6 +16,8 @@ const Reports: React.FC = () => {
   const [timeline, setTimeline] = useState<{ date: string, count: number }[]>([]);
   const [recentLimit, setRecentLimit] = useState(10);
   const [recent, setRecent] = useState<any[]>([]);
+  const [typeCounts, setTypeCounts] = useState<{ type: string, count: number }[]>([]);
+  const [error, setError] = useState<string | null>(null);
 
   // Set today's date as default on mount
   useEffect(() => {
@@ -29,7 +31,11 @@ const Reports: React.FC = () => {
   useEffect(() => {
     if (tab === 'domain' && date) {
       axios.get(`http://localhost:5000/api/violations/count?date=${date}`)
-        .then(res => setCounts(res.data));
+        .then(res => {
+          setCounts(res.data);
+          setError(null);
+        })
+        .catch(() => setError("Unable to connect to the server. Please ensure the backend is running."));
     }
   }, [tab, date]);
 
@@ -37,7 +43,11 @@ const Reports: React.FC = () => {
   useEffect(() => {
     if (tab === 'timeline' && timelineFrom && timelineTo && timelineFrom <= timelineTo) {
       axios.get(`http://localhost:5000/api/violations/timeline?from=${timelineFrom}&to=${timelineTo}`)
-        .then(res => setTimeline(res.data));
+        .then(res => {
+          setTimeline(res.data);
+          setError(null);
+        })
+        .catch(() => setError("Unable to connect to the server. Please ensure the backend is running."));
     }
   }, [tab, timelineFrom, timelineTo]);
 
@@ -45,9 +55,25 @@ const Reports: React.FC = () => {
   useEffect(() => {
     if (tab === 'recent') {
       axios.get(`http://localhost:5000/api/violations/recent?limit=${recentLimit}`)
-        .then(res => setRecent(res.data));
+        .then(res => {
+          setRecent(res.data);
+          setError(null);
+        })
+        .catch(() => setError("Unable to connect to the server. Please ensure the backend is running."));
     }
   }, [tab, recentLimit]);
+
+  // Fetch by type
+  useEffect(() => {
+    if (tab === 'type' && date) {
+      axios.get(`http://localhost:5000/api/violations/by_type?date=${date}`)
+        .then(res => {
+          setTypeCounts(res.data);
+          setError(null);
+        })
+        .catch(() => setError("Unable to connect to the server. Please ensure the backend is running."));
+    }
+  }, [tab, date]);
 
   // Export CSV for current tab
   const exportCSV = () => {
@@ -56,6 +82,8 @@ const Reports: React.FC = () => {
       csv = "Domain,Count\n" + counts.map(c => `${c.domain},${c.count}`).join("\n");
     } else if (tab === 'timeline') {
       csv = "Date,Count\n" + timeline.map(t => `${t.date},${t.count}`).join("\n");
+    } else if (tab === 'type') {
+      csv = "Type,Count\n" + typeCounts.map(t => `${t.type},${t.count}`).join("\n");
     } else {
       csv = "Domain,Timestamp,Filename\n" + recent.map(r => `${r.domain},${r.timestamp},${r.filename}`).join("\n");
     }
@@ -67,6 +95,8 @@ const Reports: React.FC = () => {
       ? `violation_counts_${date}.csv`
       : tab === 'timeline'
       ? `violation_timeline_${timelineFrom}_to_${timelineTo}.csv`
+      : tab === 'type'
+      ? `violation_types_${date}.csv`
       : `recent_violations.csv`;
     a.click();
     URL.revokeObjectURL(url);
@@ -104,9 +134,15 @@ const Reports: React.FC = () => {
   return (
     <div>
       <h2>Reports</h2>
+      {error && (
+        <div style={{ color: 'red', marginBottom: 16, fontWeight: 'bold' }}>
+          {error}
+        </div>
+      )}
       <div style={{ marginBottom: 16 }}>
         <button onClick={() => setTab('domain')} style={{ marginRight: 8, fontWeight: tab === 'domain' ? 'bold' : 'normal' }}>By Domain</button>
         <button onClick={() => setTab('timeline')} style={{ marginRight: 8, fontWeight: tab === 'timeline' ? 'bold' : 'normal' }}>Timeline</button>
+        <button onClick={() => setTab('type')} style={{ marginRight: 8, fontWeight: tab === 'type' ? 'bold' : 'normal' }}>By Type</button>
         <button onClick={() => setTab('recent')} style={{ fontWeight: tab === 'recent' ? 'bold' : 'normal' }}>Recent Violations</button>
       </div>
       {tab === 'domain' && (
@@ -155,6 +191,39 @@ const Reports: React.FC = () => {
           <button onClick={exportCSV} style={{ marginLeft: 16 }}>Export CSV</button>
           <h3 style={{ marginTop: 24, marginBottom: 8 }}>Violations Timeline (Bar Chart)</h3>
           <BarChart data={timeline} />
+        </div>
+      )}
+      {tab === 'type' && (
+        <div>
+          <h3 style={{ marginTop: 24, marginBottom: 8 }}>Violations by Type (Table)</h3>
+          <label>
+            Select Date:&nbsp;
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+          </label>
+          <button onClick={exportCSV} style={{ marginLeft: 16 }}>Export CSV</button>
+          <table style={{ borderCollapse: 'collapse', width: '100%', marginTop: 16 }}>
+            <thead>
+              <tr>
+                <th style={{ border: '1px solid #ccc', padding: 8 }}>Type</th>
+                <th style={{ border: '1px solid #ccc', padding: 8 }}>Count</th>
+              </tr>
+            </thead>
+            <tbody>
+              {typeCounts.length === 0 && (
+                <tr>
+                  <td colSpan={2} style={{ textAlign: 'center', color: '#aaa', padding: 16 }}>
+                    No data for selected date.
+                  </td>
+                </tr>
+              )}
+              {typeCounts.map((row, idx) => (
+                <tr key={idx}>
+                  <td style={{ border: '1px solid #ccc', padding: 8 }}>{row.type}</td>
+                  <td style={{ border: '1px solid #ccc', padding: 8 }}>{row.count}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
       {tab === 'recent' && (

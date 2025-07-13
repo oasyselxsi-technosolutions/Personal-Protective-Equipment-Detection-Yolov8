@@ -2011,6 +2011,54 @@ def api_violations_recent():
     results.sort(key=lambda x: x["timestamp"], reverse=True)
     return jsonify(results[:limit])
 
+@app.route('/api/violations/by_type')
+def api_violations_by_type():
+    """
+    Returns a count of violations by type for a given date,
+    considering only those violations that have a saved image file.
+    """
+    date_str = request.args.get('date')
+    DETECTION_RESULTS_FILE = os.getenv("DETECTION_RESULTS_FILE", "detection_results.txt")
+    base_dir = "static/violations"
+    type_counts = defaultdict(int)
+
+    # Step 1: Build a set of (domain, timestamp) from saved images for the date
+    pattern = re.compile(r"violation_(?P<domain>.+?)_(?P<date>\d{8})_(?P<time>\d{6})_(?P<micro>\d+)\.jpg")
+    saved_violations = set()
+    for domain in os.listdir(base_dir):
+        domain_dir = os.path.join(base_dir, domain)
+        if not os.path.isdir(domain_dir):
+            continue
+        for fname in os.listdir(domain_dir):
+            match = pattern.match(fname)
+            if not match:
+                continue
+            file_date_str = match.group("date")  # e.g. 20250713
+            file_time_str = match.group("time")  # e.g. 214703
+            file_micro = match.group("micro")
+            file_domain = match.group("domain")
+            file_date = f"{file_date_str[:4]}-{file_date_str[4:6]}-{file_date_str[6:]}"
+            if file_date != date_str:
+                continue
+            # Compose a timestamp string for matching (to second precision)
+            file_timestamp = f"{file_date} {file_time_str[:2]}:{file_time_str[2:4]}:{file_time_str[4:6]}"
+            saved_violations.add((file_domain, file_timestamp))
+
+    # Step 2: Parse DETECTION_RESULTS_FILE and count only those with a matching saved image
+    if os.path.exists(DETECTION_RESULTS_FILE):
+        with open(DETECTION_RESULTS_FILE, "r") as f:
+            for line in f:
+                # Example: [2025-07-13 21:47:03] [Manufacturing] NO-hardhat 0.99 (x1, y1, x2, y2)
+                m = re.match(r"\[(.*?)\] \[(.*?)\] ([\w\-]+) ([\d\.]+) \((.*?)\)", line)
+                if m:
+                    time_str, domain, vtype, conf, bbox = m.groups()
+                    # Only consider if this detection has a saved image
+                    if (domain, time_str) in saved_violations:
+                        type_counts[vtype] += 1
+
+    result = [{"type": vtype, "count": count} for vtype, count in type_counts.items()]
+    return jsonify(result)
+
 @app.route('/api/violations')
 def api_violations():
     """
