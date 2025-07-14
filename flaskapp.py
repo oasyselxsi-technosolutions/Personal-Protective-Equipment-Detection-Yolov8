@@ -1,4 +1,4 @@
-from flask import Flask, render_template, Response,jsonify,request,session,make_response
+from flask import Flask, render_template, Response,jsonify,request,session,make_response,send_from_directory
 
 from flask_wtf import FlaskForm
 
@@ -6,10 +6,15 @@ from wtforms import FileField, SubmitField,StringField,DecimalRangeField,Integer
 from werkzeug.utils import secure_filename
 from wtforms.validators import InputRequired,NumberRange
 import os
+
 from dotenv import load_dotenv
+
 
 # Load environment variables from .env file
 load_dotenv()
+
+# Define detection results file at module scope so it is accessible everywhere
+DETECTION_RESULTS_FILE = os.getenv("DETECTION_RESULTS_FILE", "detection_results.txt")
 
 # Required to run the YOLOv8 model
 import cv2
@@ -128,6 +133,26 @@ CORS(app,
 violation_recording_enabled = False
 
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY
+
+# Domain folder naming function to match YOLO_Video.py logic
+def get_domain_short(domain_name):
+    """
+    Get the shortened domain name for folder creation.
+    This matches the logic in YOLO_Video.py: domain_short = ''.join([c for c in domain_name if c.isalnum()])[:4]
+    """
+    return ''.join([c for c in domain_name if c.isalnum()])[:4]
+
+# Domain mappings for violation folder names
+DOMAIN_MAPPINGS = {
+    'Manufacturing': 'Manu',
+    'Construction': 'Cons', 
+    'Healthcare': 'Heal',
+    'Oil & Gas': 'OilG'
+}
+
+# Reverse mapping for lookup
+DOMAIN_SHORT_TO_FULL = {v: k for k, v in DOMAIN_MAPPINGS.items()}
+
 app.config['UPLOAD_FOLDER'] = 'static/files'
 
 def get_camera_urls():
@@ -576,8 +601,8 @@ def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True, domain='gen
     """
     cap = None
     
-    app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Starting frame generation")
-    app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Parameters: url={ip_camera_url}, yolo={apply_yolo}, domain={domain}")
+    app_logger.info(f"[FRAME-GEN-{domain.upper()}] Starting frame generation")
+    app_logger.info(f"[FRAME-GEN-{domain.upper()}] Parameters: url={ip_camera_url}, yolo={apply_yolo}, domain={domain}")
     
     # Domain detection function mapping
     domain_functions = {
@@ -590,16 +615,16 @@ def generate_frames_ip_camera_stable(ip_camera_url, apply_yolo=True, domain='gen
     
     # Validate domain parameter
     if domain not in domain_functions:
-        app_logger.error(f"🎬 [FRAME-GEN-{domain.upper()}] Unsupported domain '{domain}'. Supported: {list(domain_functions.keys())}")
-        app_logger.warning(f"🎬 [FRAME-GEN-{domain.upper()}] Defaulting to 'general' domain")
+        app_logger.error(f"[FRAME-GEN-{domain.upper()}] Unsupported domain '{domain}'. Supported: {list(domain_functions.keys())}")
+        app_logger.warning(f"[FRAME-GEN-{domain.upper()}] Defaulting to 'general' domain")
         domain = 'general'
     
     detect_function = domain_functions[domain]
-    app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Using detection function: {detect_function.__name__}")
+    app_logger.info(f"[FRAME-GEN-{domain.upper()}] Using detection function: {detect_function.__name__}")
     model = None  # Initialize model variable
     
     try:
-        app_logger.info(f"🎬 [FRAME-GEN-{domain.upper()}] Attempting to connect to IP camera: {ip_camera_url}")
+        app_logger.info(f"[FRAME-GEN-{domain.upper()}] Attempting to connect to IP camera: {ip_camera_url}")
         cap = cv2.VideoCapture(ip_camera_url)
         
         # Enhanced camera properties for stability
@@ -1021,7 +1046,7 @@ def generate_frames_ip_camera_adaptive(ip_camera_url, apply_yolo=True):
 @app.route('/ipcamera_stable/<domain>')
 def ipcamera_stable_domain(domain):
     """Route to display stable IP camera feed with domain-specific PPE detection."""
-    app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] ipcamera_stable_domain called with domain: {domain}")
+    app_logger.info(f"[DOMAIN-{domain.upper()}] ipcamera_stable_domain called with domain: {domain}")
     
     try:
         # Validate domain
@@ -1652,7 +1677,17 @@ def api_violations_count():
     # Regex for: violation_<domain>_<YYYYMMDD>_<HHMMSS>_<microseconds>.jpg
     pattern = re.compile(r"violation_(?P<domain>.+?)_(?P<date>\d{8})_(?P<time>\d{6})_\d+\.jpg")
 
-    for domain in os.listdir(base_dir):
+    # Use the correct domain folder names based on YOLO_Video.py logic
+    expected_domains = list(DOMAIN_MAPPINGS.values())  # ['Manu', 'Cons', 'Heal', 'OilG']
+    
+    if os.path.exists(base_dir):
+        all_domains = os.listdir(base_dir)
+        # Filter to only process the correctly named domain folders
+        domain_list = [d for d in all_domains if d in expected_domains and os.path.isdir(os.path.join(base_dir, d))]
+    else:
+        domain_list = []
+
+    for domain in domain_list:
         domain_dir = os.path.join(base_dir, domain)
         if not os.path.isdir(domain_dir):
             continue
@@ -1665,7 +1700,9 @@ def api_violations_count():
             if date_str and file_date != date_str:
                 continue
             file_domain = match.group("domain")
-            counts[file_domain] += 1
+            # Use the full domain name for the count
+            full_domain_name = DOMAIN_SHORT_TO_FULL.get(domain, file_domain)
+            counts[full_domain_name] += 1
 
     # Return as a list of {domain, count}
     result = [{"domain": domain, "count": count} for domain, count in counts.items()]
@@ -1846,6 +1883,7 @@ def api_violations():
             if not match:
                 continue
             file_domain = match.group("domain")
+
             file_date_str = match.group("date")      # e.g. 20250712
             file_time_str = match.group("time")      # e.g. 214703
 
@@ -1871,8 +1909,223 @@ def api_violations():
     results.sort(key=lambda x: x["timestamp"], reverse=True)
     return jsonify(results)
 
+def extract_confidence_from_detection_file(target_domain, target_timestamp):
+    """
+    Extract confidence value from detection_results.txt for a specific violation.
+    
+    Args:
+        target_domain: Domain name (e.g., "Manufacturing", "Healthcare")
+        target_timestamp: Timestamp string in format "YYYY-MM-DD HH:MM:SS"
+    
+    Returns:
+        float: Confidence value (0.0-1.0) or 0.85 as default
+    """
+    try:
+        if not os.path.exists(DETECTION_RESULTS_FILE):
+            print(f"[DEBUG] Detection results file not found: {DETECTION_RESULTS_FILE}")
+            return 0.85
+        
+        print(f"[DEBUG] Searching for confidence: domain='{target_domain}', timestamp='{target_timestamp}'")
+        
+        with open(DETECTION_RESULTS_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                    
+                # Parse line format: [2025-07-13 21:47:03] [Manufacturing] NO-hardhat 0.99 (x1, y1, x2, y2)
+                m = re.match(r"\[(.*?)\] \[(.*?)\] (.+?) ([\d\.]+) \((.*?)\)", line)
+                if m:
+                    time_str, domain, vtype, conf_str, bbox = m.groups()
+                    
+                    # Check if this matches our target violation
+                    if domain == target_domain and time_str == target_timestamp:
+                        confidence = float(conf_str)
+                        print(f"[DEBUG] Found matching confidence: {confidence} for {domain} at {time_str}")
+                        return confidence
+        
+        print(f"[DEBUG] No matching confidence found for {target_domain} at {target_timestamp}")
+        return 0.85  # Default confidence if not found
+        
+    except Exception as e:
+        print(f"[ERROR] Error extracting confidence: {e}")
+        return 0.85  # Default confidence on error
 
+@app.route('/api/violation_images')
+def api_violation_images():
+    """
+    Returns violation images with metadata, filtered by date and time range.
+    Query parameters:
+    - date: YYYY-MM-DD format (optional)
+    - time_from: HH:MM format (optional)
+    - time_to: HH:MM format (optional)
+    Example: /api/violation_images?date=2025-07-12&time_from=07:00&time_to=08:00
+    """
+    date_str = request.args.get('date')
+    time_from = request.args.get('time_from')  # e.g., "07:00"
+    time_to = request.args.get('time_to')      # e.g., "08:00"
+    
+    print(f"[DEBUG] API violation_images called with params:")
+    print(f"[DEBUG]   - date: {date_str}")
+    print(f"[DEBUG]   - time_from: {time_from}")
+    print(f"[DEBUG]   - time_to: {time_to}")
+    
+    base_dir = "static/violations"
+    print(f"[DEBUG] Looking for violations in base_dir: {base_dir}")
+    print(f"[DEBUG] Base dir exists: {os.path.exists(base_dir)}")
+    
+    # Use the correct domain folder names based on YOLO_Video.py logic
+    expected_domains = list(DOMAIN_MAPPINGS.values())  # ['Manu', 'Cons', 'Heal', 'OilG']
+    print(f"[DEBUG] Expected domain folders (from YOLO_Video.py logic): {expected_domains}")
+    
+    if os.path.exists(base_dir):
+        try:
+            all_domains = os.listdir(base_dir)
+            # Filter to only process the correctly named domain folders
+            domain_list = [d for d in all_domains if d in expected_domains and os.path.isdir(os.path.join(base_dir, d))]
+            print(f"[DEBUG] All folders in base_dir: {all_domains}")
+            print(f"[DEBUG] Correctly named domain folders to process: {domain_list}")
+        except Exception as e:
+            print(f"[DEBUG] Error listing base_dir: {e}")
+            domain_list = []
+    else:
+        print(f"[DEBUG] Creating base_dir as it doesn't exist")
+        os.makedirs(base_dir, exist_ok=True)
+        domain_list = []
+    
+    results = []
+    
+    # Pattern for: violation_<domain>_<YYYYMMDD>_<HHMMSS>_<microseconds>.jpg
+    pattern = re.compile(r"violation_(?P<domain>.+?)_(?P<date>\d{8})_(?P<time>\d{6})_(?P<micro>\d+)\.jpg")
+    
+    try:
+        # Parse time range if provided
+        time_from_dt = None
+        time_to_dt = None
+        if time_from:
+            time_from_dt = datetime.strptime(time_from, "%H:%M").time()
+            print(f"[DEBUG] Parsed time_from: {time_from_dt}")
+        if time_to:
+            time_to_dt = datetime.strptime(time_to, "%H:%M").time()
+            print(f"[DEBUG] Parsed time_to: {time_to_dt}")
+        
+        # Convert date filter if provided
+        filter_date = None
+        if date_str:
+            filter_date = datetime.strptime(date_str, "%Y-%m-%d").strftime("%Y%m%d")
+            print(f"[DEBUG] Converted date filter from {date_str} to {filter_date}")
+        
+        total_files_checked = 0
+        for domain in domain_list:
+            domain_dir = os.path.join(base_dir, domain)
+            print(f"[DEBUG] Checking domain: {domain} at path: {domain_dir}")
+            
+            if not os.path.isdir(domain_dir):
+                print(f"[DEBUG] Skipping {domain} - not a directory")
+                continue
+                
+            try:
+                files_in_domain = os.listdir(domain_dir)
+                print(f"[DEBUG] Found {len(files_in_domain)} files in {domain}: {files_in_domain[:5]}...")  # Show first 5
+                total_files_checked += len(files_in_domain)
+            except Exception as e:
+                print(f"[DEBUG] Error listing files in {domain_dir}: {e}")
+                continue
+                
+            for fname in files_in_domain:
+                match = pattern.match(fname)
+                if not match:
+                    continue
+                
+                file_domain = match.group("domain")
+                file_date_str = match.group("date")  # YYYYMMDD
+                file_time_str = match.group("time")  # HHMMSS
+                file_micro = match.group("micro")
+                
+                print(f"[DEBUG] Processing file: {fname}")
+                print(f"[DEBUG]   - file_domain: {file_domain}")
+                print(f"[DEBUG]   - file_date_str: {file_date_str}")
+                print(f"[DEBUG]   - file_time_str: {file_time_str}")
+                
+                # Filter by date if specified
+                if filter_date and file_date_str != filter_date:
+                    print(f"[DEBUG]   - Date filter mismatch: {file_date_str} != {filter_date}, skipping")
+                    continue
+                
+                # Parse file timestamp
+                try:
+                    file_dt = datetime.strptime(file_date_str + file_time_str, "%Y%m%d%H%M%S")
+                    file_time = file_dt.time()
+                    print(f"[DEBUG]   - Parsed file_dt: {file_dt}, file_time: {file_time}")
+                    
+                    # Filter by time range if specified
+                    if time_from_dt and file_time < time_from_dt:
+                        print(f"[DEBUG]   - Time too early: {file_time} < {time_from_dt}, skipping")
+                        continue
+                    if time_to_dt and file_time > time_to_dt:
+                        print(f"[DEBUG]   - Time too late: {file_time} > {time_to_dt}, skipping")
+                        continue
+                    
+                except Exception as e:
+                    print(f"[ERROR] Failed to parse timestamp for {fname}: {e}")
+                    continue
+                
+                # Build result entry
+                # Get the full domain name from the short domain folder name
+                full_domain_name = DOMAIN_SHORT_TO_FULL.get(domain, file_domain)
+                
+                # Extract real confidence from detection results file
+                # Convert timestamp format from YYYYMMDD_HHMMSS to YYYY-MM-DD HH:MM:SS
+                try:
+                    detection_timestamp = file_dt.strftime('%Y-%m-%d %H:%M:%S')
+                    print(f"[DEBUG]   - Looking for confidence with domain='{full_domain_name}', timestamp='{detection_timestamp}'")
+                    real_confidence = extract_confidence_from_detection_file(full_domain_name, detection_timestamp)
+                    print(f"[DEBUG]   - Found confidence: {real_confidence}")
+                except Exception as e:
+                    print(f"[DEBUG]   - Error extracting confidence: {e}, using default")
+                    real_confidence = 0.85
+                
+                violation_data = {
+                    "id": f"{domain}_{file_date_str}_{file_time_str}_{file_micro}",
+                    "filename": fname,
+                    "timestamp": file_dt.isoformat(),
+                    "violation_type": f"PPE Violation ({full_domain_name})",
+                    "confidence": real_confidence,  # Real confidence extracted from detection data
+                    "camera_location": full_domain_name,
+                    "file_path": f"{domain}/{fname}",
+                    "thumbnail_path": f"{domain}/{fname}"  # Same as file_path for now
+                }
+                
+                print(f"[DEBUG]   - Added to results: {violation_data['id']}")
+                results.append(violation_data)
+        
+        print(f"[DEBUG] Total files checked: {total_files_checked}")
+        print(f"[DEBUG] Total violations found: {len(results)}")
+        
+        # Sort by timestamp descending (most recent first)
+        results.sort(key=lambda x: x["timestamp"], reverse=True)
+        
+        print(f"[DEBUG] Found {len(results)} violation images for filters: date={date_str}, time_from={time_from}, time_to={time_to}")
+        
+        return jsonify(results)
+        
+    except Exception as e:
+        print(f"[ERROR] Failed to fetch violation images: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"error": "Failed to fetch violation images"}), 500
 
+@app.route('/violations/<path:filepath>')
+def serve_violation_image(filepath):
+    """
+    Serve violation images from the static/violations directory
+    Example: /violations/domain1/violation_domain1_20250712_143022_123456.jpg
+    """
+    try:
+        return send_from_directory("static/violations", filepath)
+    except Exception as e:
+        print(f"[ERROR] Failed to serve violation image {filepath}: {e}")
+        return "Image not found", 404
 
 if __name__ == "__main__":
     # You can specify port and host here
@@ -1884,29 +2137,29 @@ if __name__ == "__main__":
     port = int(os.environ.get('FLASK_PORT', 5000))
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
     
-    app_logger.info(f"🚀 [STARTUP] Initial configuration: host={host}, port={port}")
+    app_logger.info(f"[STARTUP] Initial configuration: host={host}, port={port}")
     
     # Override with command line argument if provided
     if len(sys.argv) > 1:
         try:
             port = int(sys.argv[1])
             host = '0.0.0.0'  # Allow external access when port is specified
-            app_logger.info(f"🚀 [STARTUP] Command line override: port={port}, host={host}")
+            app_logger.info(f"[STARTUP] Command line override: port={port}, host={host}")
             print(f"Starting Flask app on {host}:{port}")
         except ValueError:
-            app_logger.error("🚀 [STARTUP] Invalid port number in command line. Using default configuration")
+            app_logger.error("[STARTUP] Invalid port number in command line. Using default configuration")
             print("Invalid port number. Using default configuration")
     
     # Use debug setting from environment variable
     debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     
-    app_logger.info(f"🚀 [STARTUP] Final configuration:")
-    app_logger.info(f"🚀 [STARTUP]   - Host: {host}")
-    app_logger.info(f"🚀 [STARTUP]   - Port: {port}")
-    app_logger.info(f"🚀 [STARTUP]   - Debug mode: {debug_mode}")
-    app_logger.info(f"🚀 [STARTUP]   - Camera IP: {CAMERA_IP}")
-    app_logger.info(f"🚀 [STARTUP]   - Camera Port: {CAMERA_PORT}")
-    app_logger.info(f"🚀 [STARTUP]   - Camera Username: {CAMERA_USERNAME}")
+    app_logger.info(f"[STARTUP] Final configuration:")
+    app_logger.info(f"[STARTUP]   - Host: {host}")
+    app_logger.info(f"[STARTUP]   - Port: {port}")
+    app_logger.info(f"[STARTUP]   - Debug mode: {debug_mode}")
+    app_logger.info(f"[STARTUP]   - Camera IP: {CAMERA_IP}")
+    app_logger.info(f"[STARTUP]   - Camera Port: {CAMERA_PORT}")
+    app_logger.info(f"[STARTUP]   - Camera Username: {CAMERA_USERNAME}")
     
     print(f"Flask app running on http://{host}:{port}")
     print("Available endpoints:")
@@ -1921,14 +2174,14 @@ if __name__ == "__main__":
     print(f"  - Construction PPE: http://{host}:{port}/ipcamera_stable/construction")
     print(f"  - Oil & Gas PPE: http://{host}:{port}/ipcamera_stable/oilgas")
     
-    app_logger.info("🚀 [STARTUP] Available domain-specific endpoints:")
+    app_logger.info("[STARTUP] Available domain-specific endpoints:")
     for domain in ['healthcare', 'manufacturing', 'construction', 'oilgas']:
         endpoint = f"http://{host}:{port}/ipcamera_stable/{domain}"
-        app_logger.info(f"🚀 [STARTUP]   - {domain.capitalize()} PPE: {endpoint}")
+        app_logger.info(f"[STARTUP]   - {domain.capitalize()} PPE: {endpoint}")
     
-    app_logger.info("🚀 [STARTUP] Starting Flask application...")
+    app_logger.info("[STARTUP] Starting Flask application...")
     print(f"Debug mode: {debug_mode}")
-    print(f"📝 Logs are being written to: logs/flaskapp.log")
+    print(f"[INFO] Logs are being written to: logs/flaskapp.log")
     
     app.run(debug=debug_mode, port=port, host=host)
 

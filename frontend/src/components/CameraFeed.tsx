@@ -3,6 +3,10 @@ import { cameraFeeds, CameraFeedConfig } from '../config/cameraFeedConfig';
 
 const API_BASE_URL = process.env.REACT_APP_API_BASE_URL || "http://localhost:5000/api";
 
+interface CameraFeedProps {
+  onDateTimeChange?: (date: string, timeRange: { from: string; to: string }) => void;
+}
+
 function formatTime(t: string) {
   if (!t) return "--:--";
   const [h, m] = t.split(":");
@@ -31,7 +35,7 @@ function getToday() {
   return d.toISOString().slice(0, 10);
 }
 
-const CameraFeed: React.FC = () => {
+const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
   const [selectedFeed, setSelectedFeed] = useState<CameraFeedConfig | null>(cameraFeeds[0]);
   const [imgKey, setImgKey] = useState(Date.now());
   const [showFeed, setShowFeed] = useState(true);
@@ -39,6 +43,18 @@ const CameraFeed: React.FC = () => {
   const [timeRange, setTimeRange] = useState({ from: '07:00', to: '08:00' });
   const [feedError, setFeedError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [recording, setRecording] = useState(false);
+
+  // Notify parent component when date/time changes
+  useEffect(() => {
+    console.log('[DEBUG] CameraFeed date/time changed:', { date, timeRange });
+    if (onDateTimeChange) {
+      console.log('[DEBUG] CameraFeed calling onDateTimeChange callback');
+      onDateTimeChange(date, timeRange);
+    } else {
+      console.log('[DEBUG] CameraFeed no onDateTimeChange callback provided');
+    }
+  }, [date, timeRange, onDateTimeChange]);
 
   // Component initialization logging
   useEffect(() => {
@@ -48,8 +64,11 @@ const CameraFeed: React.FC = () => {
     console.log('🎥 [CameraFeed] API Base URL:', API_BASE_URL);
     console.log('🎥 [CameraFeed] Default selected feed:', cameraFeeds[0]);
     
-    // Log healthcare feed specifically
-    const healthcareFeed = cameraFeeds.find(feed => feed.id === 'ipcamera_healthcare');
+    // Log healthcare feed specifically (check both webcam and ipcamera versions)
+    const healthcareFeed = cameraFeeds.find(feed => 
+      feed.id === 'webcam_healthcare' || feed.id === 'ipcamera_healthcare' || 
+      feed.name.toLowerCase().includes('healthcare')
+    );
     if (healthcareFeed) {
       console.log('🏥 [CameraFeed] Healthcare feed found:', healthcareFeed);
       console.log('🏥 [CameraFeed] Healthcare URL to be used:', healthcareFeed.url);
@@ -68,6 +87,7 @@ const CameraFeed: React.FC = () => {
         });
     } else {
       console.warn('⚠️ [CameraFeed] Healthcare feed not found in configuration!');
+      console.log('🔍 [CameraFeed] Available feed IDs:', cameraFeeds.map(f => f.id));
     }
   }, []);
 
@@ -127,6 +147,45 @@ const CameraFeed: React.FC = () => {
     }
   };
 
+  // Handle recording toggle
+  const handleRecordingToggle = async () => {
+    const action = recording ? 'stop' : 'start';
+    const endpoint = recording
+      ? `${API_BASE_URL}/stop_violation_recording`
+      : `${API_BASE_URL}/start_violation_recording`;
+    
+    console.log(`🎬 [CameraFeed] Attempting to ${action} violation recording`);
+    console.log(`🎬 [CameraFeed] Endpoint: ${endpoint}`);
+    
+    try {
+      const response = await fetch(endpoint, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log(`🎬 [CameraFeed] Response status: ${response.status}`);
+      
+      if (response.ok) {
+        const result = await response.json().catch(() => ({}));
+        console.log(`✅ [CameraFeed] Successfully ${action}ed violation recording`, result);
+        setRecording(!recording);
+        
+        // Show success message
+        const message = recording ? 'Violation recording stopped' : 'Violation recording started';
+        console.log(`🎬 [CameraFeed] ${message}`);
+      } else {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error(`❌ [CameraFeed] Failed to ${action} recording: ${response.status} - ${errorText}`);
+        alert(`Failed to ${action} violation recording: ${response.status} - ${errorText}`);
+      }
+    } catch (error) {
+      console.error(`❌ [CameraFeed] Network error during ${action} recording:`, error);
+      alert(`Failed to ${action} violation recording. Please check if the backend is running.`);
+    }
+  };
+
   // Error handler for image/stream
   const handleImgError = () => {
     const errorMessage = `Unable to connect to ${selectedFeed?.name || 'camera'} feed. Please ensure the backend is running and the camera is accessible.`;
@@ -170,30 +229,57 @@ const CameraFeed: React.FC = () => {
       <div style={{ flex: 1, padding: 24 }}>
         {/* Top Bar */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
-          <input type="date" value={date} onChange={e => setDate(e.target.value)} />
-          <span style={{ margin: '0 8px' }}>Time:</span>
-          <select
-            value={timeRange.from}
-            onChange={e => setTimeRange({ ...timeRange, from: e.target.value })}
-            style={{ marginRight: 8 }}
+          {/* Recording Button */}
+          <button
+            onClick={handleRecordingToggle}
+            style={{
+              padding: "0.5em 1.5em",
+              borderRadius: "8px",
+              background: recording ? "#d32f2f" : "#1976d2",
+              color: "#fff",
+              border: "none",
+              fontWeight: 600,
+              cursor: "pointer",
+              fontSize: "14px",
+              transition: "background-color 0.2s ease",
+              marginRight: "24px"
+            }}
+            onMouseOver={(e) => {
+              e.currentTarget.style.background = recording ? "#b71c1c" : "#1565c0";
+            }}
+            onMouseOut={(e) => {
+              e.currentTarget.style.background = recording ? "#d32f2f" : "#1976d2";
+            }}
           >
-            {timeOptions.map(t => (
-              <option key={t} value={t}>{formatTime(t)}</option>
-            ))}
-          </select>
-          <span style={{ margin: '0 8px' }}>to</span>
-          <select
-            value={timeRange.to}
-            onChange={e => setTimeRange({ ...timeRange, to: e.target.value })}
-            style={{ marginRight: 8 }}
-          >
-            {timeOptions.map(t => (
-              <option key={t} value={t}>{formatTime(t)}</option>
-            ))}
-          </select>
-          <span style={{ fontWeight: 500, color: "#555", marginLeft: 8 }}>
-            {timeRangeDisplay}
-          </span>
+            {recording ? "Stop Recording Violations" : "Start Recording Violations"}
+          </button>
+          
+          <div style={{ display: 'flex', alignItems: 'center' }}>
+            <input type="date" value={date} onChange={e => setDate(e.target.value)} />
+            <span style={{ margin: '0 8px' }}>Time:</span>
+            <select
+              value={timeRange.from}
+              onChange={e => setTimeRange({ ...timeRange, from: e.target.value })}
+              style={{ marginRight: 8 }}
+            >
+              {timeOptions.map(t => (
+                <option key={t} value={t}>{formatTime(t)}</option>
+              ))}
+            </select>
+            <span style={{ margin: '0 8px' }}>to</span>
+            <select
+              value={timeRange.to}
+              onChange={e => setTimeRange({ ...timeRange, to: e.target.value })}
+              style={{ marginRight: 8 }}
+            >
+              {timeOptions.map(t => (
+                <option key={t} value={t}>{formatTime(t)}</option>
+              ))}
+            </select>
+            <span style={{ fontWeight: 500, color: "#555", marginLeft: 8 }}>
+              {timeRangeDisplay}
+            </span>
+          </div>
         </div>
         {/* Video Area */}
         <div style={{ background: '#fff', borderRadius: 12, padding: 16, minHeight: 400 }}>

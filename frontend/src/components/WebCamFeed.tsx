@@ -102,14 +102,40 @@ const WebCamFeed: React.FC = () => {
   };
 
   const handleRecordingToggle = async () => {
+    const action = recording ? 'stop' : 'start';
     const endpoint = recording
       ? `${API_BASE_URL}/stop_violation_recording`
       : `${API_BASE_URL}/start_violation_recording`;
+    
+    console.log(`🎬 [WebCamFeed] Attempting to ${action} violation recording`);
+    console.log(`🎬 [WebCamFeed] Endpoint: ${endpoint}`);
+    
     try {
-      await fetch(endpoint, { method: 'POST' });
-      setRecording(!recording);
-    } catch {
-      alert('Failed to toggle violation recording');
+      const response = await fetch(endpoint, { 
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      
+      console.log(`🎬 [WebCamFeed] Response status: ${response.status}`);
+      
+      if (response.ok) {
+        const result = await response.json().catch(() => ({}));
+        console.log(`✅ [WebCamFeed] Successfully ${action}ed violation recording`, result);
+        setRecording(!recording);
+        
+        // Show success message
+        const message = recording ? 'Violation recording stopped' : 'Violation recording started';
+        console.log(`🎬 [WebCamFeed] ${message}`);
+      } else {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.error(`❌ [WebCamFeed] Failed to ${action} recording: ${response.status} - ${errorText}`);
+        alert(`Failed to ${action} violation recording: ${response.status} - ${errorText}`);
+      }
+    } catch (error) {
+      console.error(`❌ [WebCamFeed] Network error during ${action} recording:`, error);
+      alert(`Failed to ${action} violation recording. Please check if the backend is running.`);
     }
   };
 
