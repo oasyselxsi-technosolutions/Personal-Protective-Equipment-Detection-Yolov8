@@ -1,3 +1,4 @@
+
 from flask import Flask, render_template, Response,jsonify,request,session,make_response,send_from_directory
 
 from flask_wtf import FlaskForm
@@ -2126,6 +2127,22 @@ def serve_violation_image(filepath):
     except Exception as e:
         print(f"[ERROR] Failed to serve violation image {filepath}: {e}")
         return "Image not found", 404
+
+
+# API to get violation recording enabled status
+def register_violation_recording_status_api(app):
+    @app.route('/api/violation_recording_status')
+    def api_violation_recording_status():
+        """Return the current value of config.violation_recording_enabled."""
+        try:
+            enabled = getattr(config, 'violation_recording_enabled', False)
+            return jsonify({"violation_recording_enabled": bool(enabled)})
+        except Exception as e:
+            print(f"[ERROR] Could not get violation_recording_enabled: {e}")
+            return jsonify({"violation_recording_enabled": False}), 500
+
+# Register the API after app is defined
+register_violation_recording_status_api(app)    
 
 if __name__ == "__main__":
     # You can specify port and host here

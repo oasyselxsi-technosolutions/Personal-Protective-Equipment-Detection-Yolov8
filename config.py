@@ -1,1 +1,1 @@
-violation_recording_enabled = False
+violation_recording_enabled = True

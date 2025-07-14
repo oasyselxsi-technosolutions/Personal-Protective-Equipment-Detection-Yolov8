@@ -35,6 +35,7 @@ function getToday() {
   return d.toISOString().slice(0, 10);
 }
 
+
 const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
   const [selectedFeed, setSelectedFeed] = useState<CameraFeedConfig | null>(cameraFeeds[0]);
   const [imgKey, setImgKey] = useState(Date.now());
@@ -44,6 +45,20 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
   const [feedError, setFeedError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [recording, setRecording] = useState(false);
+  const [violationRecordingEnabled, setViolationRecordingEnabled] = useState<boolean>(false);
+  // Fetch violation recording enabled status on mount
+  useEffect(() => {
+    fetch(`${API_BASE_URL}/violation_recording_status`)
+      .then(res => res.json())
+      .then(data => {
+        setViolationRecordingEnabled(!!data.violation_recording_enabled);
+        console.log('[CameraFeed] violation_recording_enabled:', data.violation_recording_enabled);
+      })
+      .catch(err => {
+        setViolationRecordingEnabled(false);
+        console.error('[CameraFeed] Failed to fetch violation_recording_enabled:', err);
+      });
+  }, []);
 
   // Notify parent component when date/time changes
   useEffect(() => {
@@ -149,31 +164,35 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
 
   // Handle recording toggle
   const handleRecordingToggle = async () => {
-    const action = recording ? 'stop' : 'start';
-    const endpoint = recording
+    // Use violationRecordingEnabled to determine action, not local recording state
+    const action = violationRecordingEnabled ? 'stop' : 'start';
+    const endpoint = violationRecordingEnabled
       ? `${API_BASE_URL}/stop_violation_recording`
       : `${API_BASE_URL}/start_violation_recording`;
-    
+
     console.log(`🎬 [CameraFeed] Attempting to ${action} violation recording`);
     console.log(`🎬 [CameraFeed] Endpoint: ${endpoint}`);
-    
+
     try {
-      const response = await fetch(endpoint, { 
+      const response = await fetch(endpoint, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
         }
       });
-      
+
       console.log(`🎬 [CameraFeed] Response status: ${response.status}`);
-      
+
       if (response.ok) {
         const result = await response.json().catch(() => ({}));
         console.log(`✅ [CameraFeed] Successfully ${action}ed violation recording`, result);
-        setRecording(!recording);
-        
+        // Update violationRecordingEnabled to reflect backend state
+        setViolationRecordingEnabled(!violationRecordingEnabled);
+        // Optionally update local recording state for legacy logic
+        setRecording(!violationRecordingEnabled);
+
         // Show success message
-        const message = recording ? 'Violation recording stopped' : 'Violation recording started';
+        const message = !violationRecordingEnabled ? 'Violation recording started' : 'Violation recording stopped';
         console.log(`🎬 [CameraFeed] ${message}`);
       } else {
         const errorText = await response.text().catch(() => 'Unknown error');
@@ -229,13 +248,14 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
       <div style={{ flex: 1, padding: 24 }}>
         {/* Top Bar */}
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 24 }}>
-          {/* Recording Button */}
+
+          {/* Recording Button (always visible, color/label based on violationRecordingEnabled) */}
           <button
             onClick={handleRecordingToggle}
             style={{
               padding: "0.5em 1.5em",
               borderRadius: "8px",
-              background: recording ? "#d32f2f" : "#1976d2",
+              background: violationRecordingEnabled ? "#d32f2f" : "#43a047", // Red if enabled, Green if not
               color: "#fff",
               border: "none",
               fontWeight: 600,
@@ -245,13 +265,13 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
               marginRight: "24px"
             }}
             onMouseOver={(e) => {
-              e.currentTarget.style.background = recording ? "#b71c1c" : "#1565c0";
+              e.currentTarget.style.background = violationRecordingEnabled ? "#b71c1c" : "#388e3c"; // Darker red/green on hover
             }}
             onMouseOut={(e) => {
-              e.currentTarget.style.background = recording ? "#d32f2f" : "#1976d2";
+              e.currentTarget.style.background = violationRecordingEnabled ? "#d32f2f" : "#43a047";
             }}
           >
-            {recording ? "Stop Recording Violations" : "Start Recording Violations"}
+            {violationRecordingEnabled ? "Stop Recording Violations" : "Start Recording Violations"}
           </button>
           
           <div style={{ display: 'flex', alignItems: 'center' }}>
