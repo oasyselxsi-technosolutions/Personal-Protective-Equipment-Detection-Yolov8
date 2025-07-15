@@ -1,17 +1,23 @@
 from datetime import datetime
 from ultralytics import YOLO
 import cv2
+
 import math
-# Add at the top
 import os
 import config
-
 from dotenv import load_dotenv
 load_dotenv()
 DETECTION_RESULTS_FILE = os.getenv("DETECTION_RESULTS_FILE", "detection_results.txt")
-# Initialize variables
 start_time = datetime.now()
 detection_results = []
+
+# --- Violation Alert Integration ---
+import requests
+def send_violation_alert(violation):
+    try:
+        requests.post('http://localhost:5000/api/violation_alert', json=violation, timeout=1)
+    except Exception as e:
+        print(f"[YOLO] Alert API call failed: {e}")
 
 
 def video_detection(path_x):
@@ -71,13 +77,18 @@ def video_detection(path_x):
                     cv2.putText(img, label, (x1, y1 - 2), 0, 1, [255, 255, 255], thickness=1, lineType=cv2.LINE_AA)
 
                     # Check if the class is NO-Mask, NO-Safety Vest, or NO-hardhat and confidence is above threshold
+
                     if class_name in ['NO-Mask', 'NO-Safety Vest', 'NO-hardhat']:
-                        detection_results.append({
-                            'class': class_name,
+                        detection = {
+                            'type': class_name,
                             'confidence': conf,
-                            'bounding_box': (x1, y1, x2, y2),
-                            'time': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                        })
+                            'bbox': (x1, y1, x2, y2),
+                            'location': 'Unknown',  # You can set this based on camera/domain
+                            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                        }
+                        detection_results.append(detection)
+                        # Send deduplicated alert to backend
+                        send_violation_alert(detection)
 
         # Display the video frame with detections
         cv2.imshow("YOLO Detection", img)

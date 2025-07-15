@@ -1,3 +1,6 @@
+# --- Violation Alert API endpoint for testing ---
+from flask import request, jsonify
+
 
 from flask import Flask, render_template, Response,jsonify,request,session,make_response,send_from_directory
 
@@ -135,6 +138,36 @@ violation_recording_enabled = False
 
 app.config['SECRET_KEY'] = FLASK_SECRET_KEY
 
+ # Use SocketIO for real-time violation alerts
+from flask_socketio import SocketIO
+import redis
+from violation_alerts import should_send_alert, send_email, send_sms, broadcast_violation
+
+socketio = SocketIO(app, cors_allowed_origins="*")
+
+# WebSocket endpoint for frontend
+@socketio.on('connect')
+def handle_connect():
+    print('Client connected')
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    print('Client disconnected')
+
+
+# API endpoint for YOLO or other modules to call
+@app.route('/api/violation_alert', methods=['POST'])
+def violation_alert():
+    violation = request.json
+    if should_send_alert(violation):
+        # Send via WebSocket
+        broadcast_violation(socketio, violation)
+        # Optionally send email/SMS
+        send_email("PPE Violation Alert", str(violation))
+        send_sms(f"PPE Violation: {violation['type']} at {violation['location']}")
+        return jsonify({"alert": "sent"}), 200
+    else:
+        return jsonify({"alert": "suppressed"}), 200
 # Domain folder naming function to match YOLO_Video.py logic
 def get_domain_short(domain_name):
     """
@@ -1054,56 +1087,56 @@ def ipcamera_stable_domain(domain):
         valid_domains = ['general', 'manufacturing', 'construction', 'healthcare', 'oilgas']
         if domain not in valid_domains:
             error_msg = f"Invalid domain '{domain}'. Valid domains: {valid_domains}"
-            app_logger.error(f"🎯 [DOMAIN-{domain.upper()}] {error_msg}")
+            app_logger.error(f"[DOMAIN-{domain.upper()}] {error_msg}")
             return jsonify({"error": error_msg}), 400
         
-        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Domain validation passed")
+        app_logger.info(f"[DOMAIN-{domain.upper()}] Domain validation passed")
         
         # Get camera URLs from environment variables
         camera_urls = get_camera_urls()
-        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Generated {len(camera_urls)} camera URLs to test")
-        app_logger.debug(f"🎯 [DOMAIN-{domain.upper()}] Camera URLs: {camera_urls}")
+        app_logger.info(f"[DOMAIN-{domain.upper()}] Generated {len(camera_urls)} camera URLs to test")
+        app_logger.debug(f"[DOMAIN-{domain.upper()}] Camera URLs: {camera_urls}")
         
         working_url = None
         
         # Try each URL format
         for i, url in enumerate(camera_urls):
-            app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Testing camera URL {i+1}/{len(camera_urls)}: {url}")
+            app_logger.info(f"[DOMAIN-{domain.upper()}] Testing camera URL {i+1}/{len(camera_urls)}: {url}")
             
             try:
                 test_cap = cv2.VideoCapture(url)
                 test_cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 
                 if test_cap.isOpened():
-                    app_logger.debug(f"🎯 [DOMAIN-{domain.upper()}] Camera opened successfully, testing frame read...")
+                    app_logger.debug(f"[DOMAIN-{domain.upper()}] Camera opened successfully, testing frame read...")
                     ret, frame = test_cap.read()
                     test_cap.release()
                     if ret and frame is not None:
                         working_url = url
-                        app_logger.info(f"✅ [DOMAIN-{domain.upper()}] Successfully connected to: {url}")
+                        app_logger.info(f"[DOMAIN-{domain.upper()}] Successfully connected to: {url}")
                         break
                     else:
-                        app_logger.warning(f"⚠️ [DOMAIN-{domain.upper()}] Connected but no frames from: {url}")
+                        app_logger.warning(f"[DOMAIN-{domain.upper()}] Connected but no frames from: {url}")
                 else:
                     test_cap.release()
-                    app_logger.warning(f"❌ [DOMAIN-{domain.upper()}] Failed to connect to: {url}")
+                    app_logger.warning(f"[DOMAIN-{domain.upper()}] Failed to connect to: {url}")
             except Exception as url_error:
-                app_logger.error(f"❌ [DOMAIN-{domain.upper()}] Exception testing URL {url}: {str(url_error)}")
+                app_logger.error(f"[DOMAIN-{domain.upper()}] Exception testing URL {url}: {str(url_error)}")
         
         if not working_url:
             error_msg = f"Cannot connect to IP camera (stable {domain})"
-            app_logger.error(f"🎯 [DOMAIN-{domain.upper()}] {error_msg}")
-            app_logger.error(f"🎯 [DOMAIN-{domain.upper()}] All {len(camera_urls)} camera URLs failed")
+            app_logger.error(f"[DOMAIN-{domain.upper()}] {error_msg}")
+            app_logger.error(f"[DOMAIN-{domain.upper()}] All {len(camera_urls)} camera URLs failed")
             return jsonify({"error": error_msg}), 500
         
-        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Using working camera URL: {working_url}")
-        app_logger.info(f"🎯 [DOMAIN-{domain.upper()}] Starting frame generation with YOLO detection...")
+        app_logger.info(f"[DOMAIN-{domain.upper()}] Using working camera URL: {working_url}")
+        app_logger.info(f"[DOMAIN-{domain.upper()}] Starting frame generation with YOLO detection...")
         
         return Response(generate_frames_ip_camera_stable(working_url, apply_yolo=True, domain=domain), 
                        mimetype='multipart/x-mixed-replace; boundary=frame')
     except Exception as e:
-        app_logger.error(f"❌ [DOMAIN-{domain.upper()}] Error in ipcamera_stable_domain: {str(e)}")
-        app_logger.exception(f"❌ [DOMAIN-{domain.upper()}] Full exception details:")
+        app_logger.error(f"[DOMAIN-{domain.upper()}] Error in ipcamera_stable_domain: {str(e)}")
+        app_logger.exception(f"[DOMAIN-{domain.upper()}] Full exception details:")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/ipcamera_stable_raw/<domain>')
@@ -1166,17 +1199,17 @@ def ipcamera_construction():
 @app.route('/ipcamera_healthcare')
 def ipcamera_healthcare():
     """Route to display IP camera feed with Healthcare PPE detection."""
-    app_logger.info("🏥 [HEALTHCARE] /ipcamera_healthcare endpoint called")
-    app_logger.debug(f"🏥 [HEALTHCARE] Request headers: {dict(request.headers)}")
-    app_logger.debug(f"🏥 [HEALTHCARE] Request args: {dict(request.args)}")
+    app_logger.info("[HEALTHCARE] /ipcamera_healthcare endpoint called")
+    app_logger.debug(f"[HEALTHCARE] Request headers: {dict(request.headers)}")
+    app_logger.debug(f"[HEALTHCARE] Request args: {dict(request.args)}")
     
     try:
         result = ipcamera_stable_domain('healthcare')
-        app_logger.info("🏥 [HEALTHCARE] Successfully called ipcamera_stable_domain('healthcare')")
+        app_logger.info("[HEALTHCARE] Successfully called ipcamera_stable_domain('healthcare')")
         return result
     except Exception as e:
-        app_logger.error(f"🏥 [HEALTHCARE] Error in ipcamera_healthcare route: {str(e)}")
-        app_logger.exception("🏥 [HEALTHCARE] Full exception details:")
+        app_logger.error(f"[HEALTHCARE] Error in ipcamera_healthcare route: {str(e)}")
+        app_logger.exception("[HEALTHCARE] Full exception details:")
         return jsonify({"error": str(e)}), 500
 
 @app.route('/ipcamera_oilgas')
@@ -2141,9 +2174,10 @@ def register_violation_recording_status_api(app):
             print(f"[ERROR] Could not get violation_recording_enabled: {e}")
             return jsonify({"violation_recording_enabled": False}), 500
 
-# Register the API after app is defined
-register_violation_recording_status_api(app)    
 
+
+
+# Ensure debug_mode, port, and host are defined before calling socketio.run
 if __name__ == "__main__":
     # You can specify port and host here
     # Default: http://127.0.0.1:5000
@@ -2153,6 +2187,7 @@ if __name__ == "__main__":
     # Get port from environment variable or command line argument
     port = int(os.environ.get('FLASK_PORT', 5000))
     host = os.environ.get('FLASK_HOST', '127.0.0.1')
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
     
     app_logger.info(f"[STARTUP] Initial configuration: host={host}, port={port}")
     
@@ -2200,8 +2235,7 @@ if __name__ == "__main__":
     print(f"Debug mode: {debug_mode}")
     print(f"[INFO] Logs are being written to: logs/flaskapp.log")
     
-    app.run(debug=debug_mode, port=port, host=host)
-
+   
     # Alternative: Directly specify port in code (uncomment one of these):
     
     # For port 8080 (local access only):

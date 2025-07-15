@@ -73,11 +73,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
 
   // Component initialization logging
   useEffect(() => {
-    console.log('🎥 [CameraFeed] Component mounted');
-    console.log('🎥 [CameraFeed] Available camera feeds:', cameraFeeds.length);
-    console.log('🎥 [CameraFeed] Camera feeds configuration:', cameraFeeds);
-    console.log('🎥 [CameraFeed] API Base URL:', API_BASE_URL);
-    console.log('🎥 [CameraFeed] Default selected feed:', cameraFeeds[0]);
+    console.log('[CameraFeed] Component mounted');
+    console.log('[CameraFeed] Available camera feeds:', cameraFeeds.length);
+    console.log('[CameraFeed] Camera feeds configuration:', cameraFeeds);
+    console.log('[CameraFeed] API Base URL:', API_BASE_URL);
+    console.log('[CameraFeed] Default selected feed:', cameraFeeds[0]);
     
     // Log healthcare feed specifically (check both webcam and ipcamera versions)
     const healthcareFeed = cameraFeeds.find(feed => 
@@ -85,24 +85,23 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
       feed.name.toLowerCase().includes('healthcare')
     );
     if (healthcareFeed) {
-      console.log('🏥 [CameraFeed] Healthcare feed found:', healthcareFeed);
-      console.log('🏥 [CameraFeed] Healthcare URL to be used:', healthcareFeed.url);
-      
+      console.log('[CameraFeed] Healthcare feed found:', healthcareFeed);
+      console.log('[CameraFeed] Healthcare URL to be used:', healthcareFeed.url);
       // Test the healthcare URL directly
       fetch(healthcareFeed.url, { method: 'HEAD' })
         .then(response => {
-          console.log('🏥 [CameraFeed] Healthcare URL HEAD test:', {
+          console.log('[CameraFeed] Healthcare URL HEAD test:', {
             status: response.status,
             contentType: response.headers.get('Content-Type'),
             url: healthcareFeed.url
           });
         })
         .catch(error => {
-          console.error('🏥 [CameraFeed] Healthcare URL HEAD test failed:', error);
+          console.error('[CameraFeed] Healthcare URL HEAD test failed:', error);
         });
     } else {
-      console.warn('⚠️ [CameraFeed] Healthcare feed not found in configuration!');
-      console.log('🔍 [CameraFeed] Available feed IDs:', cameraFeeds.map(f => f.id));
+      console.warn('[CameraFeed] Healthcare feed not found in configuration!');
+      console.log('[CameraFeed] Available feed IDs:', cameraFeeds.map(f => f.id));
     }
   }, []);
 
@@ -114,7 +113,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
 
   // Handle feed selection and reset error (WebCamFeed.tsx pattern)
   const handleFeedSelect = async (feed: CameraFeedConfig) => {
-    console.log(`🎥 [CameraFeed] Selecting feed:`, {
+    console.log(`[CameraFeed] Selecting feed:`, {
       id: feed.id,
       name: feed.name,
       url: feed.url,
@@ -123,11 +122,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
     });
 
     if (selectedFeed && selectedFeed.id !== feed.id) {
-      console.log(`🔄 [CameraFeed] Switching from ${selectedFeed.name} to ${feed.name}`);
+      console.log(`[CameraFeed] Switching from ${selectedFeed.name} to ${feed.name}`);
       setShowFeed(false);
       setLoading(true);
       try {
-        console.log(`🔌 [CameraFeed] Releasing previous feed of type: ${selectedFeed.type}`);
+        console.log(`[CameraFeed] Releasing previous feed of type: ${selectedFeed.type}`);
         const response = await fetch(`${API_BASE_URL}/release_feed`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -135,18 +134,18 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
         });
         
         if (response.ok) {
-          console.log(`✅ [CameraFeed] Successfully released previous feed`);
+          console.log(`[CameraFeed] Successfully released previous feed`);
         } else {
-          console.warn(`⚠️ [CameraFeed] Release feed returned status: ${response.status}`);
+          console.warn(`[CameraFeed] Release feed returned status: ${response.status}`);
         }
       } catch (e) {
-        console.error(`❌ [CameraFeed] Failed to release previous feed:`, e);
+        console.error(`[CameraFeed] Failed to release previous feed:`, e);
         // Don't show error to user for release_feed failures - it's not critical
         // The new feed should still work even if release fails
-        console.log(`🔄 [CameraFeed] Continuing with feed switch despite release error`);
+        console.log(`[CameraFeed] Continuing with feed switch despite release error`);
       }
       setTimeout(() => {
-        console.log(`⏰ [CameraFeed] Loading new feed after delay: ${feed.name}`);
+        console.log(`[CameraFeed] Loading new feed after delay: ${feed.name}`);
         setSelectedFeed(feed);
         setFeedError(null);
         setImgKey(Date.now());
@@ -154,7 +153,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
         setLoading(false);
       }, 500);
     } else {
-      console.log(`🚀 [CameraFeed] Loading feed directly: ${feed.name}`);
+      console.log(`[CameraFeed] Loading feed directly: ${feed.name}`);
       setSelectedFeed(feed);
       setFeedError(null);
       setImgKey(Date.now());
@@ -170,8 +169,8 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
       ? `${API_BASE_URL}/stop_violation_recording`
       : `${API_BASE_URL}/start_violation_recording`;
 
-    console.log(`🎬 [CameraFeed] Attempting to ${action} violation recording`);
-    console.log(`🎬 [CameraFeed] Endpoint: ${endpoint}`);
+    console.log(`[CameraFeed] Attempting to ${action} violation recording`);
+    console.log(`[CameraFeed] Endpoint: ${endpoint}`);
 
     try {
       const response = await fetch(endpoint, {
@@ -181,11 +180,11 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
         }
       });
 
-      console.log(`🎬 [CameraFeed] Response status: ${response.status}`);
+      console.log(`[CameraFeed] Response status: ${response.status}`);
 
       if (response.ok) {
         const result = await response.json().catch(() => ({}));
-        console.log(`✅ [CameraFeed] Successfully ${action}ed violation recording`, result);
+        console.log(`[CameraFeed] Successfully ${action}ed violation recording`, result);
         // Update violationRecordingEnabled to reflect backend state
         setViolationRecordingEnabled(!violationRecordingEnabled);
         // Optionally update local recording state for legacy logic
@@ -193,14 +192,14 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
 
         // Show success message
         const message = !violationRecordingEnabled ? 'Violation recording started' : 'Violation recording stopped';
-        console.log(`🎬 [CameraFeed] ${message}`);
+        console.log(`[CameraFeed] ${message}`);
       } else {
         const errorText = await response.text().catch(() => 'Unknown error');
-        console.error(`❌ [CameraFeed] Failed to ${action} recording: ${response.status} - ${errorText}`);
+        console.error(`[CameraFeed] Failed to ${action} recording: ${response.status} - ${errorText}`);
         alert(`Failed to ${action} violation recording: ${response.status} - ${errorText}`);
       }
     } catch (error) {
-      console.error(`❌ [CameraFeed] Network error during ${action} recording:`, error);
+      console.error(`[CameraFeed] Network error during ${action} recording:`, error);
       alert(`Failed to ${action} violation recording. Please check if the backend is running.`);
     }
   };
@@ -208,7 +207,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
   // Error handler for image/stream
   const handleImgError = () => {
     const errorMessage = `Unable to connect to ${selectedFeed?.name || 'camera'} feed. Please ensure the backend is running and the camera is accessible.`;
-    console.error(`❌ [CameraFeed] Image load error:`, {
+    console.error(`[CameraFeed] Image load error:`, {
       feedName: selectedFeed?.name,
       feedUrl: selectedFeed?.url,
       feedType: selectedFeed?.type,
@@ -319,7 +318,7 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
                 }}
                 onError={handleImgError}
                 onLoad={() => {
-                  console.log(`✅ [CameraFeed] Successfully loaded feed:`, {
+                  console.log(`[CameraFeed] Successfully loaded feed:`, {
                     name: selectedFeed.name,
                     url: selectedFeed.url,
                     type: selectedFeed.type,
@@ -328,31 +327,31 @@ const CameraFeed: React.FC<CameraFeedProps> = ({ onDateTimeChange }) => {
                   setFeedError(null);
                 }}
                 onLoadStart={() => {
-                  console.log(`🔄 [CameraFeed] Starting to load feed:`, {
+                  console.log(`[CameraFeed] Starting to load feed:`, {
                     name: selectedFeed.name,
                     url: selectedFeed.url
                   });
                 }}
                 onAbort={() => {
-                  console.warn(`⚠️ [CameraFeed] Feed load aborted:`, {
+                  console.warn(`[CameraFeed] Feed load aborted:`, {
                     name: selectedFeed.name,
                     url: selectedFeed.url
                   });
                 }}
                 onStalled={() => {
-                  console.warn(`⏸️ [CameraFeed] Feed load stalled:`, {
+                  console.warn(`[CameraFeed] Feed load stalled:`, {
                     name: selectedFeed.name,
                     url: selectedFeed.url
                   });
                 }}
                 onSuspend={() => {
-                  console.warn(`⏸️ [CameraFeed] Feed load suspended:`, {
+                  console.warn(`[CameraFeed] Feed load suspended:`, {
                     name: selectedFeed.name,
                     url: selectedFeed.url
                   });
                 }}
                 onProgress={() => {
-                  console.log(`📊 [CameraFeed] Feed loading progress:`, {
+                  console.log(`[CameraFeed] Feed loading progress:`, {
                     name: selectedFeed.name,
                     url: selectedFeed.url
                   });
